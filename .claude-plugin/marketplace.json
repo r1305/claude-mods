@@ -1,0 +1,17 @@
+{
+  "name": "claude-mods",
+  "owner": { "name": "r1305" },
+  "description": "Mods para Claude Code: enrutado de modelos con dashboard y comunicación entre sesiones.",
+  "plugins": [
+    {
+      "name": "model-router",
+      "source": "./plugins/model-router",
+      "description": "Elige modelo (haiku/sonnet/opus) para subagentes genéricos y muestra un panel en vivo con tareas, límites del plan y consumo de tokens."
+    },
+    {
+      "name": "session-link",
+      "source": "./plugins/session-link",
+      "description": "Mensajes y pizarra compartida entre sesiones paralelas de Claude Code."
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "name": "session-link",
+  "version": "0.3.2",
+  "description": "Coordina sesiones paralelas de Claude Code: panel de sesiones activas y mensajes, pizarra compartida (un archivo por sesion bajo el config dir de Claude) y comandos /link. Usa SendMessage/session.send nativos como transporte.",
+  "author": { "name": "r1305" },
+  "repository": "https://github.com/r1305/claude-mods",
+  "homepage": "https://github.com/r1305/claude-mods",
+  "types": "./types/index.d.ts"
+}

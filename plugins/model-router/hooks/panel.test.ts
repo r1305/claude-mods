@@ -1,0 +1,406 @@
+import { test, expect, mock } from 'claude-code/testing'
+import type { On } from 'claude-code'
+import type { Engine } from 'claude-code/testing'
+
+import type { ModelRouterDay } from '../types'
+import { lastDayKeys, stackCells } from './usage'
+import { narrowWidth } from './view'
+
+const NOW = new Date(2026, 9, 12, 12, 0, 0).getTime()
+
+const day = (haiku: number, sonnet = 0, opus = 0): ModelRouterDay => ({ haiku, sonnet, opus, other: 0, total: haiku + sonnet + opus })
+
+const pane = (o: { cols?: number; rows?: number; bodyRows?: number; surface?: string } = {}) =>
+  ({
+    plugin: 'model-router',
+    surface: o.surface ?? 'terminal',
+    component: 'Pane',
+    requestId: 'model-router',
+    viewport: { columns: o.cols ?? 80, rows: o.rows ?? 40 },
+    props: {
+      title: 'Model router',
+      isFocused: false,
+      bodyColumns: o.cols ?? 80,
+      placement: 'inline',
+      ...(o.bodyRows !== undefined ? { scroll: { bodyRows: o.bodyRows } } : {}),
+    },
+  }) as never
+
+const textOf = (n: unknown): string => {
+  if (typeof n === 'string' || typeof n === 'number') return String(n)
+  if (Array.isArray(n)) return n.map(textOf).join('')
+  if (n && typeof n === 'object') {
+    const o = n as { props?: { children?: unknown }; children?: unknown }
+    return textOf((o.props as { label?: string; children?: unknown } | undefined)?.label ?? o.props?.children ?? o.children)
+  }
+  return ''
+}
+
+const linesOf = (n: unknown): string[] => {
+  const out: string[] = []
+  const walk = (x: unknown) => {
+    if (!x || typeof x !== 'object') return
+    const o = x as { type?: string; props?: { children?: unknown; flexDirection?: string }; children?: unknown }
+    if (o.type === 'Text' || o.type === 'Button') {
+      out.push(textOf(x))
+      return
+    }
+    const kids = o.props?.children ?? o.children
+    if (o.type === 'Box' && o.props?.flexDirection === 'row') {
+      out.push(textOf(kids))
+      return
+    }
+    for (const k of Array.isArray(kids) ? kids : [kids]) walk(k)
+  }
+  walk(n)
+  return out
+}
+
+const norm = (p: string) => p.replace(/\\/g, '/').replace(/^[A-Za-z]:/, '')
+
+type Limits = { kind: string; percentUsed: number; resetsAt?: string }[]
+
+const FIVE_RESET = new Date(NOW + 2 * 3600 * 1000 + 10 * 60000).toISOString()
+
+function world(on: On, opts: { limits?: Limits; files?: Record<string, string>; openFails?: boolean } = {}) {
+  const files = opts.files ?? {}
+  const dir = '/cfg/model-router/usage'
+  mock.clock(on, { now: NOW })
+  mock.env(on, { CLAUDE_CONFIG_DIR: '/cfg' })
+  on('session.id', () => ({ value: 'sess-a' }) as never)
+  on('session.cwd', () => ({ value: 'C:/work/proyecto-a' }) as never)
+  on('fs.write', (_$, e) => {
+    files[norm(e.path)] = e.text
+    return { value: undefined } as never
+  })
+  on('fs.read', (_$, e) => {
+    const t = files[norm(e.path)]
+    if (t === undefined) throw new Error('ENOENT')
+    return { value: t } as never
+  })
+  on('fs.list', (_$, e) => {
+    if (norm(e.path) !== dir) return { value: [] } as never
+    return {
+      value: Object.keys(files)
+        .filter(p => p.startsWith(`${dir}/`))
+        .map(p => ({ name: p.slice(dir.length + 1), kind: 'file', size: files[p]?.length ?? 0 })),
+    } as never
+  })
+  on('ui.open', () => {
+    if (opts.openFails) throw new Error('boom')
+    return { value: { isPlaced: true } } as never
+  })
+  on('session.usage', () =>
+    ({
+      value: {
+        startedAt: 0,
+        context: { window: 200000, tokens: 80000, percent: 40 },
+        rateLimits: opts.limits ?? [],
+        cost: { usd: 1.5 },
+      },
+    }) as never,
+  )
+  on('turn.complete', (_$, e) => ({ text: e.answer }) as never)
+  let n = 0
+  on('agent.spawn', (_$, e) => ({ model: (e.model as string | undefined) ?? 'claude-opus-5-5', agentId: `agent_${++n}`, status: 'async_launched' }) as never)
+  return files
+}
+
+const spawn = (description: string, prompt = 'busca donde esta el login') =>
+  ({
+    tool_use_id: `toolu_${description}`,
+    prompt,
+    description,
+    subagentType: 'general-purpose',
+    provider: { plugin: 'engine', tier: 'core' },
+    parentModel: 'claude-opus-5-5',
+    background: true,
+    fork: false,
+  }) as never
+
+const complete = (agentId: string | undefined, tokens: number, model: string, reason = 'answer') =>
+  ({
+    answer: 'ok',
+    durationMs: 1500,
+    isAborted: false,
+    turnId: 't',
+    ...(agentId ? { agentId } : {}),
+    reason,
+    usage: { input_tokens: tokens, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, model },
+  }) as never
+
+const seedFiles = (): Record<string, string> => {
+  const k = lastDayKeys(NOW, 7)
+  return {
+    '/cfg/model-router/usage/sess-b.json': JSON.stringify({
+      name: 'proyecto-b',
+      project: 'proyecto-b',
+      days: { [k[6] as string]: day(0, 0, 3000), [k[3] as string]: day(1000), [k[4] as string]: day(200, 800) },
+    }),
+  }
+}
+
+const LIMITS_OK: Limits = [
+  { kind: 'five_hour', percentUsed: 34, resetsAt: FIVE_RESET },
+  { kind: 'seven_day', percentUsed: 41 },
+]
+
+const textOfPane = async (ui: { drawn: () => Promise<unknown> }) => linesOf(await ui.drawn()).join('\n')
+
+async function seedTasks($: Engine) {
+  await $.agent.spawn(spawn('Buscar archivos de login'))
+  await $.agent.spawn(spawn('Integrar pagos con Stripe', 'integrar Stripe checkout'))
+  await $.agent.spawn(spawn('Agregar endpoint de reservas', 'implement the new endpoint and its tests'))
+  await $.turn.complete(complete('agent_1', 1200, 'claude-haiku-4-5'))
+  await $.turn.complete(complete(undefined, 4000, 'claude-opus-5-5'))
+  await $.turn.complete(complete(undefined, 800, 'claude-sonnet-4-5'))
+}
+
+test('resumen with data answers: how am I doing, what runs, which model spends', async ($, on) => {
+  world(on, { limits: LIMITS_OK, files: seedFiles() })
+  await seedTasks($)
+  const ui = await $.ui.mount(pane())
+  const text = await textOfPane(ui)
+  expect(text).toContain('Router ● Activo')
+  expect(text).toContain('Vas bien')
+  expect(text).toContain('Límites de tu plan')
+  expect(text).toMatch(/Ventana de 5 h .*34 %.*se reinicia en 2 h 10 min/)
+  expect(text).toMatch(/Semana .*41 %/)
+  expect(text).not.toContain('Pasa a modelos más baratos')
+  expect(text).toContain('Ahora mismo')
+  expect(text).toContain('2 tareas en curso')
+  expect(text).toMatch(/Sonnet .*Agregar endpoint de reservas/)
+  expect(text).toContain('Reparto por modelo (esta sesión)')
+  expect(text).toMatch(/Opus 67 %/)
+  expect(text).toContain('Modelos económicos (Haiku y Sonnet)')
+  expect(text).toContain('▸ 1 Resumen')
+  expect(text).toContain('2 Tareas')
+  expect(text).toContain('Los % de límites son los oficiales')
+  expect(text).not.toContain('~0')
+})
+
+test('resumen with limits at 80% or more: red light and help sentence', async ($, on) => {
+  world(on, { limits: [{ kind: 'five_hour', percentUsed: 82, resetsAt: FIVE_RESET }, { kind: 'seven_day', percentUsed: 30 }] })
+  const ui = await $.ui.mount(pane())
+  const text = await textOfPane(ui)
+  expect(text).toContain('Cuidado: 5 h al 82 %')
+  expect(text).toContain('5 h se reinicia en 2 h 10 min')
+  expect(text).toContain('Pasa a modelos más baratos o espera al reinicio.')
+  expect(JSON.stringify(await ui.drawn())).toContain('"color":"red"')
+})
+
+test('resumen with limits almost exhausted', async ($, on) => {
+  world(on, { limits: [{ kind: 'seven_day', percentUsed: 97 }] })
+  const ui = await $.ui.mount(pane())
+  const text = await textOfPane(ui)
+  expect(text).toContain('Límite casi agotado: Semana al 97 %')
+  expect(text).toContain('Pasa a modelos más baratos')
+})
+
+test('resumen without limits and without tasks shows friendly empty states', async ($, on) => {
+  world(on)
+  const ui = await $.ui.mount(pane())
+  const text = await textOfPane(ui)
+  expect(text).toContain('Sin datos de límites')
+  expect(text).toContain('Sin datos: los límites aparecen con una suscripción de Claude.')
+  expect(text).toContain('Nada en curso.')
+  expect(text).toContain('Aún no hay consumo en esta sesión.')
+})
+
+test('narrow viewport uses the compact one-line layout and never overflows', async ($, on) => {
+  world(on, { limits: LIMITS_OK, files: seedFiles() })
+  await seedTasks($)
+  const ui = await $.ui.mount(pane({ cols: 40, rows: 40 }))
+  const lines = linesOf(await ui.drawn())
+  expect(lines.some(l => /^5h [█░]+ +34% ↻2h10$/.test(l))).toBe(true)
+  expect(lines.filter(l => l.length > 40)).toEqual([])
+})
+
+test('low viewport keeps header, limits and running and points to the other tabs', async ($, on) => {
+  world(on, { limits: LIMITS_OK, files: seedFiles() })
+  await seedTasks($)
+  const ui = await $.ui.mount(pane({ bodyRows: 16 }))
+  const text = await textOfPane(ui)
+  expect(text).toContain('Router ● Activo')
+  expect(text).toContain('Límites de tu plan')
+  expect(text).toContain('Ahora mismo')
+  expect(text).not.toContain('Reparto por modelo')
+  expect(text).toContain('… más detalle en las pestañas Tareas (2) y Consumo (3)')
+})
+
+test('emoji surfaces draw emoji, terminal does not', async ($, on) => {
+  world(on, { limits: LIMITS_OK })
+  await $.agent.spawn(spawn('Buscar archivos de login'))
+  const desktop = await textOfPane(await $.ui.mount(pane({ surface: 'desktop' })))
+  expect(desktop).toContain('🟢')
+  expect(desktop).toContain('Haiku')
+  const term = await textOfPane(await $.ui.mount(pane()))
+  expect(term).not.toMatch(/[🟢🔵🟣⏳✅❌]/u)
+})
+
+test('tareas tab lists what runs and the history', async ($, on) => {
+  world(on, { limits: LIMITS_OK })
+  await seedTasks($)
+  const ui = await $.ui.mount(pane())
+  await ui.press({ key: 'tab-tareas' })
+  const text = await textOfPane(ui)
+  expect(text).toContain('▸ 2 Tareas')
+  expect(text).toContain('Resumen de tareas')
+  expect(text).toMatch(/2 en curso/)
+  expect(text).toMatch(/1 hecha\b/)
+  expect(text).toContain('En curso')
+  expect(text).toContain('Historial reciente')
+  expect(text).toMatch(/✓ ● Haiku .*Buscar archivos de login.*\(auto\)/)
+})
+
+test('tareas tab empty state', async ($, on) => {
+  world(on)
+  const ui = await $.ui.mount(pane())
+  await ui.press({ key: 'tab-tareas' })
+  const text = await textOfPane(ui)
+  expect(text).toContain('Todavía no se lanzó ninguna tarea.')
+})
+
+test('consumo tab: today vs 7 days, weekday chart, per-session with the current one marked', async ($, on) => {
+  world(on, { limits: LIMITS_OK, files: seedFiles() })
+  await seedTasks($)
+  const ui = await $.ui.mount(pane())
+  await ui.press({ key: 'tab-consumo' })
+  const text = await textOfPane(ui)
+  expect(text).toContain('▸ 3 Consumo')
+  expect(text).toContain('HOY')
+  expect(text).toContain('ÚLTIMOS 7 DÍAS')
+  expect(text).toMatch(/Hoy\s+[█░]+ /)
+  expect(text).toMatch(/\b(Lun|Mar|Mié|Jue|Vie|Sáb|Dom)\b/)
+  expect(text).toContain('Reparto por modelo (7 días)')
+  expect(text).toContain('Por sesión')
+  expect(text).toMatch(/▸ proyecto-a .*← esta/)
+  expect(text).toContain('proyecto-b')
+  expect(text).toContain('Esta sesión')
+  expect(text).toContain('Costo estimado: $1,50')
+  expect(text).toMatch(/Contexto .*40 %/)
+})
+
+test('consumo tab with little room falls back to a sparkline', async ($, on) => {
+  world(on, { limits: LIMITS_OK, files: seedFiles() })
+  const ui = await $.ui.mount(pane({ bodyRows: 17 }))
+  await ui.press({ key: 'tab-consumo' })
+  const text = await textOfPane(ui)
+  expect(text).toMatch(/[▁▂▃▄▅▆▇█_]/)
+  expect(text).toContain('Hoy')
+})
+
+test('pause button flips the router state in the header and the status line', async ($, on) => {
+  world(on, { limits: LIMITS_OK })
+  const statuses: unknown[] = []
+  on('ui.status', (_$, e) => {
+    statuses.push((e as { text?: string }).text)
+    return { value: undefined } as never
+  })
+  const ui = await $.ui.mount(pane())
+  expect(await textOfPane(ui)).toContain('Router ● Activo')
+  await ui.press({ key: 'toggle' })
+  const text = await textOfPane(ui)
+  expect(text).toContain('Router ○ Pausado')
+  expect(text).toContain('p Activar enrutado')
+  expect(statuses[statuses.length - 1]).toBe('Router ○ pausado')
+})
+
+test('command.run falls back to a friendly message instead of throwing', async ($, on) => {
+  world(on, { openFails: true })
+  const out = await $.command.run({ command: 'model-router', args: '' } as never)
+  expect(out.text).toBe('model-router: error interno, inténtalo de nuevo.')
+  const off = await $.command.run({ command: 'model-router', args: 'off' } as never)
+  expect(off.text).toContain('pausado')
+})
+
+test('session.start survives a failing command registration and pane open', async ($, on) => {
+  world(on, { openFails: true })
+  on('command.register', () => {
+    throw new Error('boom')
+  })
+  let reached = false
+  on('session.start', (_$, e) => {
+    reached = true
+    return e as never
+  })
+  await $.session.start({ cwd: '/work' } as never)
+  expect(reached).toBe(true)
+})
+
+for (const cols of [30, 40, 45]) {
+  test(`compact resumen at ${cols} columns: one line per element, bar sums to width`, async ($, on) => {
+    world(on, { limits: LIMITS_OK, files: seedFiles() })
+    await seedTasks($)
+    const ui = await $.ui.mount(pane({ cols, rows: 50 }))
+    const lines = linesOf(await ui.drawn())
+    expect(lines.filter(l => l.length > cols)).toEqual([])
+    const W = narrowWidth(cols)
+    const bars = lines.filter(l => /^█+$/.test(l))
+    expect(bars).toHaveLength(1)
+    expect((bars[0] ?? '').length).toBe(W)
+    expect(stackCells([1200, 800, 4000, 0], W).reduce((s, c) => s + c, 0)).toBe(W)
+    const legend = lines.filter(l => /^H \d+% · /.test(l))
+    expect(legend).toHaveLength(1)
+    expect(legend[0]).toMatch(/^H \d+% · S \d+% · O \d+%$/)
+    expect(lines).toContain('● Vas bien')
+    expect(lines.some(l => /^Hoy \d+(,\d)?k? · 7d \d+(,\d)?k?$/.test(l))).toBe(true)
+  })
+}
+
+test('compact resumen with little height omits whole sections and hints it', async ($, on) => {
+  world(on, { limits: LIMITS_OK, files: seedFiles() })
+  await seedTasks($)
+  const ui = await $.ui.mount(pane({ cols: 35, rows: 40, bodyRows: 12 }))
+  const lines = linesOf(await ui.drawn())
+  expect(lines).toContain('● Vas bien')
+  expect(lines.some(l => l.startsWith('Límites'))).toBe(true)
+  expect(lines.some(l => l.startsWith('Reparto'))).toBe(false)
+  expect(lines.some(l => l.startsWith('… omitido:'))).toBe(true)
+  expect(lines.filter(l => l.length > 35)).toEqual([])
+})
+
+type Node = { type?: string; props?: Record<string, unknown>; children?: unknown }
+const kidsOf = (n: Node): Node[] => {
+  const c = n.children ?? n.props?.children
+  return (Array.isArray(c) ? c : [c]).filter((x): x is Node => !!x && typeof x === 'object')
+}
+const segmentsOf = (root: unknown): { width: string; grow: unknown; color: unknown; text: string }[] => {
+  const out: { width: string; grow: unknown; color: unknown; text: string }[] = []
+  const walk = (n: Node) => {
+    if (n.type === 'Box' && typeof n.props?.width === 'string' && n.props.width.endsWith('%') && n.props.height === 1 && n.props.backgroundColor !== undefined) {
+      out.push({ width: n.props.width, grow: n.props.flexGrow, color: n.props.backgroundColor, text: textOf(n) })
+      return
+    }
+    kidsOf(n).forEach(walk)
+  }
+  ;[root as Node].forEach(walk)
+  return out
+}
+
+test('desktop surface: the stacked split is a row of boxes, one per model, not a line of █', async ($, on) => {
+  world(on, { limits: LIMITS_OK, files: seedFiles() })
+  await seedTasks($)
+  const ui = await $.ui.mount(pane({ surface: 'desktop' }))
+  const tree = await ui.drawn()
+  expect(linesOf(tree).some(l => /^█+$/.test(l))).toBe(false)
+  const segs = segmentsOf(tree)
+  expect(segs.map(s => s.color)).toEqual(['green', 'blue', 'magenta'])
+  expect(segs.reduce((s, x) => s + Number.parseInt(x.width, 10), 0)).toBe(100)
+  expect(segs.every(s => s.width.endsWith('%'))).toBe(true)
+  expect(segs.every(s => s.text === '')).toBe(true)
+  expect(segs.slice(0, -1).every(s => s.grow === 0 || s.grow === undefined)).toBe(true)
+  expect(segs[segs.length - 1]?.grow).toBe(1)
+  expect(JSON.stringify(tree)).not.toMatch(/…/)
+  await ui.press({ key: 'tab-consumo' })
+  expect(segmentsOf(await ui.drawn()).map(s => s.color)).toEqual(['green', 'blue', 'magenta'])
+})
+
+test('terminal surface keeps the character bar', async ($, on) => {
+  world(on, { limits: LIMITS_OK, files: seedFiles() })
+  await seedTasks($)
+  const ui = await $.ui.mount(pane())
+  const tree = await ui.drawn()
+  expect(segmentsOf(tree)).toEqual([])
+  expect(linesOf(tree).some(l => l.includes('█'))).toBe(true)
+})
