@@ -1,7 +1,7 @@
 import type { ModelRouterLevel } from '../types'
 
 export const COMPLEX =
-  /arquitectur|architect|\bauth|autenticaci|autorizaci|oauth|\bjwt\b|stripe|concurren|race condition|condici[oó]n de carrera|deadlock|transacci|(?<![\w-])lock(s|ing)?\b|migraci|migration|rediseñ|redesign|vulnerab|cifrad|encrypt|root cause|causa ra[ií]z|sin causa|unknown cause|intermitente|flaky|debug|depur|investig|analiz|optimiz|rendimiento|performance|N\+1|permis|\bIDOR\b|\bXSS\b|inyecci|injection|password|contraseñ/i
+  /arquitectur|architect|\bauth|autenticaci|autorizaci|oauth|\bjwt\b|culqi|stripe|mercadopago|paypal|izipay|pasarela|concurren|race condition|condici[oó]n de carrera|deadlock|transacci|(?<![\w-])lock(s|ing)?\b|migraci|migration|rediseñ|redesign|vulnerab|cifrad|encrypt|root cause|causa ra[ií]z|sin causa|unknown cause|intermitente|flaky|debug|depur|investig|analiz|optimiz|rendimiento|performance|N\+1|permis|\bIDOR\b|\bXSS\b|inyecci|injection|password|contraseñ/i
 
 export const GENERIC = /refactor|seguridad|security|\bpagos?\b|payments?\b/i
 
