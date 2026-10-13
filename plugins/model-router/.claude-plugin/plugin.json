@@ -1,6 +1,6 @@
 {
   "name": "model-router",
-  "version": "0.4.4",
+  "version": "0.4.5",
   "description": "Ahorra tokens eligiendo modelo (haiku/sonnet/opus) para subagentes general-purpose/Explore sin modelo propio y muestra en un panel en vivo que ejecuta cada modelo, con barras, limites de la cuenta y consumo de tokens por dia/sesion (/model-router usage).",
   "author": { "name": "r1305" },
   "repository": "https://github.com/r1305/claude-mods",
