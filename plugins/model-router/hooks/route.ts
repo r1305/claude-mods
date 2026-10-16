@@ -1,5 +1,5 @@
 import type { ModelRouterLevel, ModelRouterLimit } from '../types'
-import { STRONG, classify, head } from './classify'
+import { STRONG, classify, classifyDefault, head } from './classify'
 
 export const LEVELS: ModelRouterLevel[] = ['haiku', 'sonnet', 'opus']
 
@@ -47,7 +47,7 @@ export const RULES: Record<string, AgentRule> = {
   plan: { base: 'sonnet', floor: 'haiku', ceiling: 'opus', pick: byClass('sonnet') },
 }
 
-export const DEFAULT_RULE: AgentRule = { base: 'sonnet', floor: 'haiku', ceiling: 'opus', pick: (d, p) => classify(d, p) }
+export const DEFAULT_RULE: AgentRule = { base: 'haiku', floor: 'haiku', ceiling: 'opus', pick: (d, p) => classifyDefault(d, p) }
 
 export const ruleFor = (subagentType: string) => RULES[subagentType.trim().toLowerCase()] ?? DEFAULT_RULE
 

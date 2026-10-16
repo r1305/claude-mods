@@ -49,3 +49,13 @@ export function classify(description: string, prompt: string): ModelRouterLevel 
   if (isLight) return 'haiku'
   return 'sonnet'
 }
+
+export function classifyDefault(description: string, prompt: string): ModelRouterLevel {
+  const level = classify(description, prompt)
+  if (level === 'opus') return 'opus'
+  const all = clean(`${description}\n${prompt}`)
+  if (CHANGE_VERB.test(all)) return 'sonnet'
+  if (INVESTIGATE.test(all) && !READ_ONLY.test(`${clean(description)}
+${clean(head(prompt))}`)) return 'sonnet'
+  return 'haiku'
+}

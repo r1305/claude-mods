@@ -1,6 +1,6 @@
 import { test, expect } from 'claude-code/testing'
 
-import { DOMAIN, classify } from './classify'
+import { DOMAIN, classify, classifyDefault } from './classify'
 import { applyUsage, route, routeNote, usageState } from './route'
 
 const LONG_SEARCH = `Lista todos los archivos que usan el helper de fechas y resume en qué módulo está cada uno. ${'Incluye rutas, nombres de funciones y el número de línea de cada llamada encontrada en el repositorio. '.repeat(15)}`
@@ -90,4 +90,28 @@ test('usage: without data nothing is lowered and the note says so', () => {
   expect(route('dev', 'Refactor de pagos multiarchivo', 'refactoriza el módulo de pagos', []).reason).toContain('sin datos de uso')
   expect(routeNote([]).text).toContain('sin datos de uso')
   expect(routeNote([{ kind: 'five_hour', percentUsed: 20 }]).text).toBe('elige el modelo de todos los subagentes')
+})
+
+test('default rule: unclassified agents start at haiku, change verbs go to sonnet, strong signals to opus', () => {
+  for (const t of ['general-purpose', 'Explore', 'some-plugin:agent', '']) {
+    expect(route(t, 'Buscar', 'busca donde esta el login', []).model).toBe('haiku')
+    expect(route(t, 'Leer', 'lee el archivo de configuracion', []).model).toBe('haiku')
+    expect(route(t, 'Listar', 'lista los endpoints existentes', []).model).toBe('haiku')
+    expect(route(t, 'Resumir', 'resume el modulo de fechas', []).model).toBe('haiku')
+    expect(route(t, 'Implementar', 'implementa el helper de fechas', []).model).toBe('sonnet')
+    expect(route(t, 'Crear', 'crea el archivo de utilidades', []).model).toBe('sonnet')
+    expect(route(t, 'Arreglar', 'arregla el formulario', []).model).toBe('sonnet')
+    expect(route(t, 'Fix', 'fix the date helper', []).model).toBe('sonnet')
+    expect(route(t, 'Cambiar color', 'cambia el color del boton en css', []).model).toBe('sonnet')
+    expect(route(t, 'Investigar', 'investiga la causa raiz del error intermitente', []).model).toBe('opus')
+    expect(route(t, 'Arquitectura', 'rediseña la arquitectura del modulo', []).model).toBe('opus')
+  }
+  expect(route('general-purpose', 'Buscar', LONG_SEARCH, []).model).toBe('haiku')
+  expect(classifyDefault('Listar', 'lista los archivos')).toBe('haiku')
+})
+
+test('default rule: usage limits still apply', () => {
+  expect(route('Explore', 'Implementar', 'implementa el helper', [{ kind: 'five_hour', percentUsed: 85 }]).model).toBe('haiku')
+  expect(route('Explore', 'Investigar', 'investiga la causa raiz del error', [{ kind: 'five_hour', percentUsed: 85 }]).model).toBe('sonnet')
+  expect(route('Explore', 'Investigar', 'investiga la causa raiz del error', [{ kind: 'five_hour', percentUsed: 96 }]).model).toBe('haiku')
 })

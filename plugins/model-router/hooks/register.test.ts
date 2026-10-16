@@ -98,7 +98,7 @@ test('named agents are routed with their base and floor', async ($, on) => {
   await $.agent.spawn(spawnInput({ subagentType: 'dev', description: 'Refactor de pagos multiarchivo', prompt: 'refactoriza el modulo de pagos' }))
   expect(seen.model).toBe('opus')
   await $.agent.spawn(spawnInput({ subagentType: 'some-plugin:writer', description: 'Cambiar color', prompt: 'cambia el color del boton en css' }))
-  expect(seen.model).toBe('haiku')
+  expect(seen.model).toBe('sonnet')
   const ui = await $.ui.mount(PANE)
   expect(await tareasText(ui)).toMatch(/Cambiar color.*\(auto\)/)
 })
