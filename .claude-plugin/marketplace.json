@@ -17,11 +17,6 @@
       "name": "clean-view",
       "source": "./plugins/clean-view",
       "description": "Vista limpia: panel sobre el cuadro de texto con pasos, tiempo y estado (terminado, detenido, pendiente de mi respuesta) y modo simple que oculta las filas técnicas de herramientas. /simple on|off."
-    },
-    {
-      "name": "quota-watch",
-      "source": "./plugins/quota-watch",
-      "description": "Cuotas del plan: porcentaje de la ventana de 5 h y semanal, alertas a 80 % y 90 %, tokens por modelo en la sesión y /quota."
     }
   ]
 }
