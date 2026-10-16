@@ -45,14 +45,16 @@ export function stepsOf(input: unknown): CleanViewStep[] {
 }
 
 export function panelState(turn: CleanViewTurn, waiting: boolean): PanelState {
-  if (turn === 'idle') return 'inactivo'
+  if (turn === 'idle') return waiting ? 'pendiente' : 'inactivo'
   if (turn === 'done') return 'terminado'
   if (turn === 'stopped') return 'detenido'
   return waiting ? 'pendiente' : 'en-curso'
 }
 
 export function panelVisible(turn: CleanViewTurn, waiting: boolean, hasSteps: boolean): boolean {
-  return turn === 'running' || turn === 'stopped' || waiting || hasSteps
+  if (waiting) return true
+  if (turn === 'idle') return false
+  return turn === 'running' || turn === 'stopped' || hasSteps
 }
 
 export function turnEnd(reason: string): 'done' | 'stopped' {

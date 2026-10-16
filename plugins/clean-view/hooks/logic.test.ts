@@ -28,10 +28,19 @@ test('the panel is drawn only with something real: a running turn, steps, a pend
   expect(panelVisible('idle', false, false)).toBe(false)
   expect(panelVisible('done', false, false)).toBe(false)
   expect(panelVisible('running', false, false)).toBe(true)
-  expect(panelVisible('idle', false, true)).toBe(true)
+  expect(panelVisible('idle', false, true)).toBe(false)
   expect(panelVisible('done', false, true)).toBe(true)
   expect(panelVisible('done', true, false)).toBe(true)
   expect(panelVisible('stopped', false, false)).toBe(true)
+})
+
+test('turno idle: residual steps never draw the panel, a pending answer or permission always does', () => {
+  expect(panelVisible('idle', false, true)).toBe(false)
+  expect(panelVisible('idle', true, false)).toBe(true)
+  expect(panelVisible('idle', true, true)).toBe(true)
+  expect(panelState('idle', true)).toBe('pendiente')
+  expect(panelState('idle', false)).toBe('inactivo')
+  expect(panelVisible('running', false, false)).toBe(true)
 })
 
 test('a permission verdict is pending only when it asks the person', () => {

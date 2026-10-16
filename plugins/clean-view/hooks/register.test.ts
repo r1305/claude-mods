@@ -114,6 +114,50 @@ test('turno activo se dibuja con estado y tiempo, sin el texto de plan ausente',
   expect(await panel.find({ type: 'Text', text: /Sin plan emitido por la sesión/ })).toBeUndefined()
 })
 
+test('turno idle con pasos residuales del turno anterior no dibuja el panel', async ($, on) => {
+  world(on)
+  on('tool.call', { tool: 'TodoWrite' }, () => ({ result: {} }) as never)
+  on('prompt.submit', () => ({ text: 'dos' }) as never)
+  await start($)
+
+  await $.turn.start({ text: 'uno', turnId: 'i1' } as never)
+  await $.tool.call({
+    tool: 'TodoWrite',
+    todos: [{ content: 'Leer el código', status: 'completed', activeForm: 'Leyendo el código' }],
+  } as never)
+  await $.turn.complete({ reason: 'answer', turnId: 'i1' } as never)
+  await $.prompt.submit({ text: 'dos' } as never)
+
+  const panel = await $.ui.mount(above())
+  expect(await panel.find({ type: 'Text', text: /Estado/ })).toBeUndefined()
+  expect(await panel.find({ type: 'Text', text: /\[x\] Leer el código/ })).toBeUndefined()
+})
+
+test('turno idle con una respuesta pendiente sí dibuja el panel', async ($, on) => {
+  world(on)
+  on('tool.check', () => ({ decision: 'ask' }) as never)
+  await start($)
+
+  await $.tool.check({ tool: 'Bash', input: { command: 'ls' }, tool_use_id: 'idle1' } as never)
+  const panel = await $.ui.mount(above())
+  expect(await panel.find({ type: 'Text', text: /Pendiente de mi respuesta/ })).toBeDefined()
+})
+
+test('turno activo con pasos residuales dibuja estado y los pasos', async ($, on) => {
+  world(on)
+  on('tool.call', { tool: 'TodoWrite' }, () => ({ result: {} }) as never)
+  await start($)
+
+  await $.turn.start({ text: 'tres', turnId: 'r1' } as never)
+  await $.tool.call({
+    tool: 'TodoWrite',
+    todos: [{ content: 'Escribir tests', status: 'in_progress', activeForm: 'Escribiendo tests' }],
+  } as never)
+  const panel = await $.ui.mount(above())
+  expect(await panel.find({ type: 'Text', text: /En curso/ })).toBeDefined()
+  expect(await panel.find({ type: 'Text', text: /Escribiendo tests/ })).toBeDefined()
+})
+
 test('pasos reales se dibujan aunque el turno haya terminado', async ($, on) => {
   world(on)
   on('tool.call', { tool: 'TodoWrite' }, () => ({ result: {} }) as never)

@@ -173,7 +173,7 @@ export const register: Register = on => {
     if (e.props.hasSurvey) return next(e)
     const status = await read($, turn)
     const pending = await read($, waiting)
-    const plan = await read($, steps)
+    const plan = status === 'idle' ? [] : await read($, steps)
     if (!panelVisible(status, pending.length > 0, plan.length > 0)) return next(e)
 
     const isOn = await read($, enabled)
