@@ -17,12 +17,6 @@
       "name": "clean-view",
       "source": "./plugins/clean-view",
       "description": "Vista limpia: panel sobre el cuadro de texto con pasos, tiempo y estado (terminado, detenido, pendiente de mi respuesta) y modo simple que oculta las filas técnicas de herramientas. /simple on|off."
-    },
-    {
-      "name": "savvy-progress",
-      "source": "./plugins/savvy-progress",
-      "version": "1.2.2",
-      "description": "Barra de progreso sobre el prompt para /savvy-flow y panel de subagentes (/agents-info): en ejecución, terminados y planeados, con modelo, tareas, contexto, coste y tiempo."
     }
   ]
 }
