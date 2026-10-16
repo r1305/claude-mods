@@ -1,0 +1,9 @@
+{
+  "name": "quota-watch",
+  "version": "0.1.0",
+  "author": {
+    "name": "r1305"
+  },
+  "description": "Cuotas del plan: porcentaje de la ventana de 5 h y semanal, alertas a 80 % y 90 %, tokens por modelo en la sesión y /quota.",
+  "types": "./types/index.d.ts"
+}
