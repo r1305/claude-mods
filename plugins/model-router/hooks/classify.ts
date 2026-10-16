@@ -11,6 +11,20 @@ export const SAFE = /\bcopias? de seguridad\b|\bbackups?\b/gi
 export const CHANGE_VERB =
   /\bimplement\w*|\bintegr\w*|\brefactor\w*|\bcambi\w*|\bmodific\w*|\bañad\w*|\bagreg\w*|\bcrea(r|te|do|da)?\b|\badd\b|\bchange\b|\bfix\w*|\barregl\w*|\bcorrig\w*|\brewrite\b|\breescrib\w*|\bmigr\w*|\bredise\w*|\bescrib\w*|\bwrite\b|\bupdate\b|\bactualiz\w*|\belimin\w*|\bborra\w*|\bdelete\b|\bremove\b/i
 
+export const STRONG_CHANGE =
+  /\bcrea(r|n|s|te|ndo|do|da)?\b|\bcreat\w*|\bimplement\w*|\barregl\w*|\bagreg\w*|\bcorrig\w*|\bcorrij\w*|\brefactor\w*|\bmigr\w*|\bescrib\w*|\bescrit\w*|\bañad\w*|\bwrit(e|es|ing|ten)\b|\badd(s|ed|ing)?\b|\bfix\w*/i
+
+export const WEAK_CHANGE =
+  /\bactualiz\w*|\belimin\w*|\bcambi\w*|\bintegr(a|ar|an|e|en|ando)\b|\bmodific\w*|\bupdat(e|es|ed|ing)\b|\bchang(e|es|ed|ing)\b|\bdelet(e|es|ed|ing)\b|\bremov(e|es|ed|ing)\b/i
+
+export const EDIT_OBJECT =
+  /\barchivos?\b|\bfiles?\b|\bc[oó]digo\b|\bcode\b|\bcss\b|\bestilos?\b|\bstyles?\b|\bcomponentes?\b|\bcomponents?\b|\bendpoints?\b|\bfunci[oó]n(es)?\b|\bfunctions?\b|\btests?\b|\bconfig\w*|\bbase de datos\b|\bdatabase\b|\btablas?\b|\btables?\b|\brutas?\b|\broutes?\b/i
+
+export const READ_START =
+  /^\W*(busca|buscar|lee|leer|lista|listar|resume|resumir|explica|explicar|explora|explorar|mapea|mapear|d[oó]nde|cu[aá]l(es)?|qu[eé])\b/i
+
+export const HARD_FAULT = /\bbugs?\b|\berror(es)?\b|\bfall(a|o|an)\b|\bcrash\w*/i
+
 export const COSMETIC =
   /\btexto\b|\btext\b|\bcopy\b|\bcss\b|\bestilos?\b|\bstyles?\b|\bcolou?r\b|\btypo\b|\blabel\b|\betiqueta\b|\bbot[oó]n\b|\bbutton\b|\biconos?\b|\bicons?\b|\breadme\b|\bcomentarios?\b|\bcomments?\b/i
 
@@ -50,12 +64,20 @@ export function classify(description: string, prompt: string): ModelRouterLevel 
   return 'sonnet'
 }
 
+const isReadTask = (description: string, prompt: string) => {
+  const d = clean(description)
+  const first = clean(prompt).trimStart().split(/[.!?\n]/)[0] ?? ''
+  return READ_START.test(d) || READ_START.test(first) || READ_ONLY.test(`${d}\n${clean(head(prompt))}`)
+}
+
 export function classifyDefault(description: string, prompt: string): ModelRouterLevel {
   const level = classify(description, prompt)
   if (level === 'opus') return 'opus'
   const all = clean(`${description}\n${prompt}`)
-  if (CHANGE_VERB.test(all)) return 'sonnet'
-  if (INVESTIGATE.test(all) && !READ_ONLY.test(`${clean(description)}
-${clean(head(prompt))}`)) return 'sonnet'
+  if (STRONG_CHANGE.test(all)) return 'sonnet'
+  const readTask = isReadTask(description, prompt)
+  if (!readTask && WEAK_CHANGE.test(all) && EDIT_OBJECT.test(all)) return 'sonnet'
+  if (readTask) return HARD_FAULT.test(all) ? 'sonnet' : 'haiku'
+  if (INVESTIGATE.test(all)) return 'sonnet'
   return 'haiku'
 }

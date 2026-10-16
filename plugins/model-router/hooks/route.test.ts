@@ -115,3 +115,16 @@ test('default rule: usage limits still apply', () => {
   expect(route('Explore', 'Investigar', 'investiga la causa raiz del error', [{ kind: 'five_hour', percentUsed: 85 }]).model).toBe('sonnet')
   expect(route('Explore', 'Investigar', 'investiga la causa raiz del error', [{ kind: 'five_hour', percentUsed: 96 }]).model).toBe('haiku')
 })
+
+test('default rule: ambiguous verbs need an edit object and read tasks stay cheap', () => {
+  const m = (d: string, p: string) => route('general-purpose', d, p, []).model
+  expect(m('Buscar', 'busca dónde se actualiza el precio')).toBe('haiku')
+  expect(m('Listar', 'lista qué cambia en el changelog')).toBe('haiku')
+  expect(m('Actualizar', 'actualiza el componente del carrito')).toBe('sonnet')
+  expect(m('Eliminar', 'elimina la tabla temporal de la base de datos')).toBe('sonnet')
+  expect(m('Implementar', 'implementa el endpoint de login')).toBe('sonnet')
+  expect(m('Explicar', 'explica por qué falla el login')).toBe('sonnet')
+  expect(m('Explicar', 'explica por qué se usa este patrón')).toBe('haiku')
+  expect(m('Cambiar', 'cambia el precio')).toBe('haiku')
+  expect(m('Update', 'update the config file')).toBe('sonnet')
+})
