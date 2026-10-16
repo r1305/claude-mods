@@ -3,6 +3,9 @@ import type { On } from 'claude-code'
 
 import type { ModelRouterDay } from '../types'
 import { addTokens, aggregate, asUsageFile, bar, dayKey, fmtDur, fmtReset, fmtTokens, health, levelColor, lastDayKeys, pct, stackCells, statusText, trimDays, weekdayShort } from './usage'
+import { DEFAULT_PREFS } from './quota'
+
+const TH = { warn: DEFAULT_PREFS.warn, critical: DEFAULT_PREFS.critical }
 
 const NOW = new Date(2026, 9, 12, 12, 0, 0).getTime()
 const DAY = 24 * 3600 * 1000
@@ -121,12 +124,13 @@ test('percent, bar and threshold colors', () => {
   expect(pct(1, 4)).toBe(25)
   expect(pct(5, 0)).toBe(0)
   expect(pct(9, 4)).toBe(100)
-  expect(levelColor(0)).toBe('green')
-  expect(levelColor(59.9)).toBe('green')
-  expect(levelColor(60)).toBe('yellow')
-  expect(levelColor(79)).toBe('yellow')
-  expect(levelColor(80)).toBe('red')
-  expect(levelColor(100)).toBe('red')
+  expect(levelColor(0, TH)).toBe('green')
+  expect(levelColor(79.9, TH)).toBe('green')
+  expect(levelColor(80, TH)).toBe('yellow')
+  expect(levelColor(89, TH)).toBe('yellow')
+  expect(levelColor(90, TH)).toBe('red')
+  expect(levelColor(100, TH)).toBe('red')
+  expect(levelColor(65, { warn: 60, critical: 70 })).toBe('yellow')
   expect(bar(50, 10)).toBe('█████░░░░░')
   expect(bar(0, 4)).toBe('░░░░')
   expect(bar(1, 10)).toBe('█░░░░░░░░░')
@@ -184,7 +188,9 @@ test('usage panel with rateLimits, multi-session files and the usage command', a
   const out = await $.command.run({ command: 'model-router', args: 'usage' } as never)
   expect(out.text).toContain('Router ● Activo · Cuidado: Semana al 85 %')
   expect(out.text).toContain('Ventana de 5 h: 34 % · se reinicia en 2 h 10 min')
-  expect(out.text).toContain('Semana: 85 %')
+  expect(out.text).toContain('Ventana semanal: 85 % · ▲ aviso')
+  expect(out.text).toContain('Alertas: activadas · aviso 80 % · crítico 90 %')
+  expect(out.text).toContain('claude-haiku-4-5: entrada 500 · salida 0 · caché lectura 0 · caché escritura 0')
   expect(out.text).toContain('Pasa a modelos más baratos o espera al reinicio.')
   expect(out.text).toContain('Nada en curso.')
   expect(out.text).toContain('Hoy: 3,5 k tokens (Haiku 14 % · Opus 86 %)')
@@ -204,7 +210,7 @@ test('usage panel with rateLimits, multi-session files and the usage command', a
   await ui.press({ key: 'tab-resumen' })
   const home = linesOf(await ui.drawn()).join('\n')
   expect(home).toMatch(/Ventana de 5 h .*34 %.*se reinicia en 2 h 10 min/)
-  expect(home).toMatch(/Semana .*85 %/)
+  expect(home).toMatch(/Ventana semanal .*85 %/)
   expect(home).not.toContain('Sin datos de límites')
 })
 
@@ -213,7 +219,8 @@ test('usage panel without rateLimits says there is no data', async ($, on) => {
   fakeWorld(on, {})
   on('session.usage', () => ({ value: { startedAt: 0, context: { window: 200000 }, rateLimits: [] } }) as never)
   const out = await $.command.run({ command: 'model-router', args: 'usage' } as never)
-  expect(out.text).toContain('Sin datos de límites (aparecen con una suscripción de Claude).')
+  expect(out.text).toContain('Ventana de 5 h: Sin dato')
+  expect(out.text).toContain('Ventana semanal: Sin dato')
   const ui = await $.ui.mount(PANE)
   const text = linesOf(await ui.drawn()).join('\n')
   expect(text).toContain('Sin datos de límites')
@@ -257,13 +264,16 @@ test('human formats: tokens, durations, resets, weekdays', () => {
 })
 
 test('traffic light follows the worst plan limit', () => {
-  expect(health([]).level).toBe('none')
-  expect(health([{ kind: 'five_hour', percentUsed: 20 }])).toMatchObject({ level: 'ok', color: 'green', text: 'Vas bien' })
-  expect(health([{ kind: 'five_hour', percentUsed: 65 }])).toMatchObject({ level: 'ok', color: 'yellow' })
-  expect(health([{ kind: 'five_hour', percentUsed: 82 }, { kind: 'seven_day', percentUsed: 10 }])).toMatchObject({ level: 'warn', color: 'red', text: 'Cuidado: 5 h al 82 %' })
-  expect(health([{ kind: 'seven_day', percentUsed: 96 }]).text).toBe('Límite casi agotado: Semana al 96 %')
-  expect(health([{ kind: 'seven_day', percentUsed: 100 }]).text).toBe('Límite alcanzado: Semana al 100 %')
-  expect(health([{ kind: 'other_thing', percentUsed: 99 }]).level).toBe('none')
+  expect(health([], TH).level).toBe('none')
+  expect(health([{ kind: 'five_hour', percentUsed: 20 }], TH)).toMatchObject({ level: 'ok', color: 'green', text: 'Vas bien' })
+  expect(health([{ kind: 'five_hour', percentUsed: 79 }], TH)).toMatchObject({ level: 'ok', color: 'green', text: 'Vas bien' })
+  expect(health([{ kind: 'five_hour', percentUsed: 82 }, { kind: 'seven_day', percentUsed: 10 }], TH)).toMatchObject({ level: 'warn', color: 'yellow', text: 'Cuidado: 5 h al 82 %' })
+  expect(health([{ kind: 'five_hour', percentUsed: 91 }], TH)).toMatchObject({ level: 'danger', color: 'red' })
+  expect(health([{ kind: 'seven_day', percentUsed: 96 }], TH).text).toBe('Límite casi agotado: Semana al 96 %')
+  expect(health([{ kind: 'seven_day', percentUsed: 100 }], TH).text).toBe('Límite alcanzado: Semana al 100 %')
+  expect(health([{ kind: 'other_thing', percentUsed: 99 }], TH).level).toBe('none')
+  expect(health([{ kind: 'five_hour', percentUsed: 55 }], { warn: 50, critical: 60 })).toMatchObject({ level: 'warn', text: 'Cuidado: 5 h al 55 %' })
+  expect(health([{ kind: 'five_hour', percentUsed: 75 }], { warn: 50, critical: 60 }).level).toBe('danger')
 })
 
 test('stacked bar cells add up to the width and keep tiny shares visible', () => {

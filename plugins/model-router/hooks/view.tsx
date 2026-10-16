@@ -1,6 +1,15 @@
 import type { EngineInterface } from 'claude-code'
 
-import type { ModelRouterBucket, ModelRouterContext, ModelRouterLimit, ModelRouterSessionTokens, ModelRouterTask } from '../types'
+import type {
+  ModelRouterBucket,
+  ModelRouterContext,
+  ModelRouterLimit,
+  ModelRouterModels,
+  ModelRouterPrefs,
+  ModelRouterSessionTokens,
+  ModelRouterTask,
+} from '../types'
+import { LEVEL_MARK, LEVEL_NAME, NO_DATA, WINDOWS, levelOf, modelRowText, totalTokensOf } from './quota'
 import {
   BUCKETS,
   HELP_HIGH,
@@ -47,6 +56,8 @@ export type PanelData = {
   ownId: string
   cost: number | null
   ctx: ModelRouterContext | null
+  models: ModelRouterModels
+  prefs: ModelRouterPrefs
   route?: { text: string; level: 'none' | 'ok' | 'high' | 'critical' }
 }
 
@@ -147,11 +158,14 @@ export function renderPanel(els: Els, d: PanelData, o: PanelOpts): El {
   const dot = (b: ModelRouterBucket): Seg => [`${ic[b]} `, { color: MODEL_COLOR[b] }]
   const dotW = iw + 1
 
-  const meter = (key: string, label: string, p: number, detail: string, inner: number): Row => {
-    const labelW = 14
-    const color = levelColor(p)
+  /** One meter: the bar in the level colour, the figure, and `tag` as the level in words (aviso, crítico). */
+  const meter = (key: string, label: string, p: number, detail: string, inner: number, tag = ''): Row => {
+    const labelW = 16
+    const color = levelColor(p, d.prefs)
     const pctTxt = fmtPct(p).padStart(5)
-    const barW = inner - labelW - 1 - 1 - pctTxt.length - (detail !== '' ? 2 + detail.length : 0)
+    const tagSegs: Seg[] = tag !== '' ? [[`  ${tag}`, { bold: true, color }]] : []
+    const tagW = tag !== '' ? tag.length + 2 : 0
+    const barW = inner - labelW - 1 - 1 - pctTxt.length - tagW - (detail !== '' ? 2 + detail.length : 0)
     if (barW >= 6) {
       return L(key, [
         label.padEnd(labelW),
@@ -159,10 +173,11 @@ export function renderPanel(els: Els, d: PanelData, o: PanelOpts): El {
         [bar(p, Math.min(barW, 24)), { color }],
         ' ',
         [pctTxt, { bold: true, color }],
+        ...tagSegs,
         ...(detail !== '' ? ([['  ' + detail, DIM]] as Seg[]) : []),
       ])
     }
-    const head = line(`${key}-a`, [[label, BOLD], ' ', [fmtPct(p), { bold: true, color }]])
+    const head = line(`${key}-a`, [[label, BOLD], ' ', [fmtPct(p), { bold: true, color }], ...tagSegs])
     const barW2 = inner - (detail !== '' ? detail.length + 2 : 0)
     if (detail === '' || barW2 >= 6) {
       return {
@@ -246,7 +261,7 @@ export function renderPanel(els: Els, d: PanelData, o: PanelOpts): El {
   }
 
   const lim = planLimits(d.limits)
-  const hd = health(d.limits)
+  const hd = health(d.limits, d.prefs)
   const sessTotal = Object.values(d.sess.byModel).reduce((s, n) => s + n, 0)
 
   const limitsBlock: Block = {
@@ -254,13 +269,24 @@ export function renderPanel(els: Els, d: PanelData, o: PanelOpts): El {
     partial: true,
     build: inner => {
       const rows: Row[] = []
-      for (const l of lim) {
+      for (const kind of WINDOWS) {
+        const l = lim.find(x => x.kind === kind)
+        if (l === undefined) {
+          rows.push(P(`lim-${kind}-none`, [[`${limitLabel(kind)}: ${NO_DATA}`, DIM]], inner))
+          continue
+        }
         const r = fmtReset(l.resetsAt, now)
-        rows.push(meter(`lim-${l.kind}`, limitLabel(l.kind), l.percentUsed, r !== '' ? `se reinicia en ${r}` : '', inner))
+        const lvl = levelOf(l.percentUsed, d.prefs)
+        rows.push(meter(`lim-${kind}`, limitLabel(kind), l.percentUsed, r !== '' ? `se reinicia en ${r}` : '', inner, `${LEVEL_MARK[lvl]} ${LEVEL_NAME[lvl]}`))
+      }
+      for (const l of lim.filter(x => x.kind === 'spend_limit')) {
+        const r = fmtReset(l.resetsAt, now)
+        const lvl = levelOf(l.percentUsed, d.prefs)
+        rows.push(meter(`lim-${l.kind}`, limitLabel(l.kind), l.percentUsed, r !== '' ? `se reinicia en ${r}` : '', inner, `${LEVEL_MARK[lvl]} ${LEVEL_NAME[lvl]}`))
       }
       if (lim.length === 0) rows.push(P('lim-none', [['Sin datos: los límites aparecen con una suscripción de Claude.', DIM]], inner))
       const high = lim.reduce((m, l) => Math.max(m, l.percentUsed), 0)
-      if (high >= 80) rows.push(P('lim-help', [[`→ ${HELP_HIGH}`, { bold: true, color: levelColor(high) }]], inner))
+      if (high >= d.prefs.warn) rows.push(P('lim-help', [[`→ ${HELP_HIGH}`, { bold: true, color: levelColor(high, d.prefs) }]], inner))
       return { title: [['Límites de tu plan', BOLD]], body: rows }
     },
   }
@@ -450,6 +476,46 @@ export function renderPanel(els: Els, d: PanelData, o: PanelOpts): El {
     },
   }
 
+  const modelsBlock: Block = {
+    id: 'modelos',
+    partial: true,
+    build: inner => {
+      const named = Object.keys(d.models)
+        .sort()
+        .flatMap(name => {
+          const row = d.models[name]
+          return row === undefined ? [] : [{ name, row }]
+        })
+      if (named.length === 0) {
+        return {
+          title: [['Tokens por modelo (esta sesión)', BOLD]],
+          body: [P('pm-empty', [['Sin dato: aún no hay turnos completados en esta sesión.', DIM]], inner)],
+        }
+      }
+      const totalAll = named.reduce((s, x) => s + totalTokensOf(x.row), 0)
+      const nameW = clamp(Math.floor(inner / 3), 8, 20)
+      const bw = clamp(inner - nameW - 1 - 1 - 5 - 1 - 8, 3, 30)
+      const rows: Row[] = []
+      for (const { name, row } of named) {
+        const t = totalTokensOf(row)
+        const share = totalAll > 0 ? (t / totalAll) * 100 : 0
+        rows.push(
+          L(`pm-${name}`, [
+            [short(name, nameW).padEnd(nameW), BOLD],
+            ' ',
+            [bar(share, bw), { color: 'cyan' }],
+            ' ',
+            [fmtPct(share).padStart(5), BOLD],
+            ' ',
+            [fmtTokens(t), DIM],
+          ]),
+        )
+        rows.push(P(`pm-${name}-d`, [[modelRowText(row), DIM]], inner))
+      }
+      return { title: [['Tokens por modelo (esta sesión)', BOLD]], body: rows }
+    },
+  }
+
   const weekSplitBlock: Block = {
     id: 'reparto-7',
     build: inner => ({
@@ -517,7 +583,7 @@ export function renderPanel(els: Els, d: PanelData, o: PanelOpts): El {
       ? [limitsBlock, nowBlock, sessionSplitBlock, miniUsageBlock]
       : o.tab === 'tareas'
         ? [tasksSummaryBlock, runBlock, historyBlock]
-        : [totalsBlock, chartBlock, weekSplitBlock, sessionsBlock, thisSessionBlock]
+        : [totalsBlock, chartBlock, weekSplitBlock, sessionsBlock, thisSessionBlock, modelsBlock]
 
   const tabsH = cols < 46 ? 2 : 1
   const footNoteH = o.bodyRows >= 22 ? linesFor(NOTE.length, cols - 2) : 0
@@ -596,16 +662,18 @@ export function renderPanel(els: Els, d: PanelData, o: PanelOpts): El {
         L(`cl-${l.kind}`, [
           limitTiny(l.kind).padEnd(lw),
           ' ',
-          [bar(l.percentUsed, barW), { color: levelColor(l.percentUsed) }],
+          [bar(l.percentUsed, barW), { color: levelColor(l.percentUsed, d.prefs) }],
           ' ',
-          [`${p}%`.padStart(4), { bold: true, color: levelColor(l.percentUsed) }],
+          [`${p}%`.padStart(4), { bold: true, color: levelColor(l.percentUsed, d.prefs) }],
           ...(withReset ? ([[rs, DIM]] as Seg[]) : []),
         ]),
       )
     }
-    if (lim.length === 0) rows.push(L('cl-none', [['Sin datos de límites', DIM]]))
+    for (const kind of WINDOWS) {
+      if (!lim.some(l => l.kind === kind)) rows.push(L(`cl-${kind}`, [[`${limitTiny(kind)}  ${NO_DATA}`, DIM]]))
+    }
     const high = lim.reduce((m, l) => Math.max(m, l.percentUsed), 0)
-    if (high >= 80) rows.push(L('cl-help', [['→ Usa modelos más baratos', { bold: true, color: levelColor(high) }]]))
+    if (high >= d.prefs.warn) rows.push(L('cl-help', [['→ Usa modelos más baratos', { bold: true, color: levelColor(high, d.prefs) }]]))
     return { id: 'c-lim', name: 'límites', title: 'Límites', rows, partial: true }
   }
   const cNow = (): CBlock => {

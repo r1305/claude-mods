@@ -108,6 +108,8 @@ test('usage limits lower the routed model', async ($, on) => {
   on('session.usage', () => ({ value: { startedAt: 0, context: { window: 1 }, rateLimits: [{ kind: 'five_hour', percentUsed: 96 }] } }) as never)
   const seen: { model?: unknown } = {}
   engineSpawn(on, seen)
+  on('session.start', (_$, e) => ({ cwd: e.cwd }) as never)
+  await $.session.start({ cwd: '/w/proyecto-a', surface: 'terminal', isInteractive: true } as never)
   await $.agent.spawn(spawnInput({ subagentType: 'dev', description: 'Refactor de pagos multiarchivo', prompt: 'refactoriza el modulo de pagos' }))
   expect(seen.model).toBe('haiku')
   await $.agent.spawn(spawnInput({ subagentType: 'review', description: 'Review cambios', prompt: 'revisa el diff' }))

@@ -1,5 +1,7 @@
 import type { ModelRouterLevel, ModelRouterLimit } from '../types'
 import { STRONG, classify, classifyDefault, head } from './classify'
+import { DEFAULT_PREFS } from './quota'
+import type { Thresholds } from './quota'
 
 export const LEVELS: ModelRouterLevel[] = ['haiku', 'sonnet', 'opus']
 
@@ -66,21 +68,18 @@ export function usageState(limits: readonly ModelRouterLimit[] | undefined): Usa
   }
 }
 
-export const HIGH = 80
-export const CRITICAL = 95
-
-export function applyUsage(level: ModelRouterLevel, floor: ModelRouterLevel, u: UsageState) {
+export function applyUsage(level: ModelRouterLevel, floor: ModelRouterLevel, u: UsageState, th: Thresholds = DEFAULT_PREFS) {
   const notes: string[] = []
   let out = level
   if (u.hasData) {
-    if (u.general >= CRITICAL) {
+    if (u.general >= th.critical) {
       out = floor
       if (out !== level) notes.push(`uso ${Math.round(u.general)} % → haiku/suelo`)
-    } else if (u.general >= HIGH) {
+    } else if (u.general >= th.warn) {
       out = at(Math.max(rank(floor), rank(level) - 1))
       if (out !== level) notes.push(`uso ${Math.round(u.general)} % → un escalón menos`)
     }
-    if (u.opusWeekly !== undefined && u.opusWeekly >= HIGH && out === 'opus') {
+    if (u.opusWeekly !== undefined && u.opusWeekly >= th.warn && out === 'opus') {
       out = 'sonnet'
       notes.push(`opus semanal ${Math.round(u.opusWeekly)} % → sin opus`)
     }
@@ -104,10 +103,11 @@ export function route(
   prompt: string,
   limits: readonly ModelRouterLimit[] | undefined,
   requested?: string,
+  th: Thresholds = DEFAULT_PREFS,
 ): RouteDecision {
   const rule = ruleFor(subagentType)
   const picked = clampLevel(rule.pick(description, prompt), rule.floor, rule.ceiling)
-  const used = applyUsage(picked, rule.floor, usageState(limits))
+  const used = applyUsage(picked, rule.floor, usageState(limits), th)
   const reason = [
     `${subagentType || 'general-purpose'}: base ${rule.base}, suelo ${rule.floor}, tarea ${picked}`,
     ...(requested !== undefined && requested !== '' ? [`pedido ${requested} (ignorado)`] : []),
@@ -116,19 +116,19 @@ export function route(
   return { model: used.level, base: rule.base, floor: rule.floor, picked, reason }
 }
 
-export function routeNote(limits: readonly ModelRouterLimit[] | undefined) {
+export function routeNote(limits: readonly ModelRouterLimit[] | undefined, th: Thresholds = DEFAULT_PREFS) {
   const u = usageState(limits)
   if (!u.hasData) return { text: 'sin datos de uso: no baja de modelo por límites', level: 'none' as const }
   const parts: string[] = []
   let level: 'ok' | 'high' | 'critical' = 'ok'
-  if (u.general >= CRITICAL) {
+  if (u.general >= th.critical) {
     parts.push(`uso al ${Math.round(u.general)} %: todo a haiku salvo suelos`)
     level = 'critical'
-  } else if (u.general >= HIGH) {
+  } else if (u.general >= th.warn) {
     parts.push(`uso al ${Math.round(u.general)} %: baja un escalón`)
     level = 'high'
   }
-  if (u.opusWeekly !== undefined && u.opusWeekly >= HIGH) {
+  if (u.opusWeekly !== undefined && u.opusWeekly >= th.warn) {
     parts.push(`opus semanal al ${Math.round(u.opusWeekly)} %: sin opus`)
     if (level === 'ok') level = 'high'
   }

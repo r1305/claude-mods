@@ -69,7 +69,7 @@ test('usage: weekly opus at 80% or more removes opus', () => {
   expect(routeNote(lim).text).toContain('sin opus')
 })
 
-test('usage: 80% general drops one step, 95% sends everything to haiku except the floor', () => {
+test('usage: aviso (80 %) drops one step, crítico (90 %, default) sends everything to haiku except the floor', () => {
   const high = [{ kind: 'seven_day', percentUsed: 85 }]
   expect(route('dev', 'Refactor de pagos multiarchivo', 'refactoriza el módulo de pagos', high).model).toBe('sonnet')
   expect(route('dev', 'Endpoint', 'implementa el endpoint nuevo y sus tests', high).model).toBe('haiku')

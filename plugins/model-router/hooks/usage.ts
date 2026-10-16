@@ -3,10 +3,26 @@ import type {
   ModelRouterDay,
   ModelRouterLimit,
   ModelRouterLevel,
+  ModelRouterModels,
+  ModelRouterPrefs,
   ModelRouterTask,
   ModelRouterSessionTokens,
   ModelRouterUsageFile,
 } from '../types'
+import {
+  DEFAULT_PREFS,
+  LABELS,
+  LEVEL_MARK,
+  LEVEL_NAME,
+  NO_DATA,
+  WINDOWS,
+  alertsLine,
+  levelOf,
+  modelRowText,
+  totalTokensOf,
+  totalsOf as totalsOfModels,
+} from './quota'
+import type { Thresholds } from './quota'
 
 export const BUCKETS: ModelRouterBucket[] = ['haiku', 'sonnet', 'opus', 'other']
 export const KEEP_DAYS = 30
@@ -166,8 +182,11 @@ export const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.ma
 
 export const pct = (part: number, whole: number) => (whole > 0 ? clamp(Math.round((part / whole) * 100), 0, 100) : 0)
 
-/** green below 60, yellow 60-79, red from 80. */
-export const levelColor = (p: number) => (p >= 80 ? 'red' : p >= 60 ? 'yellow' : 'green')
+/** The traffic light colour of a figure: green normal, yellow aviso, red crítico. */
+export const levelColor = (p: number, th: Thresholds) => {
+  const lvl = levelOf(p, th)
+  return lvl === 'critico' ? 'red' : lvl === 'aviso' ? 'yellow' : 'green'
+}
 
 export const bar = (p: number, width: number, fill = '█', empty = '░') => {
   const w = Math.max(1, Math.floor(width))
@@ -236,7 +255,7 @@ export const plural = (n: number, one: string, many: string) => `${n} ${n === 1 
 const PLAN_KINDS = ['five_hour', 'seven_day', 'spend_limit']
 
 export const limitLabel = (kind: string) =>
-  kind === 'five_hour' ? 'Ventana de 5 h' : kind === 'seven_day' ? 'Semana' : kind === 'spend_limit' ? 'Gasto extra' : kind
+  kind === 'five_hour' ? LABELS.five_hour : kind === 'seven_day' ? LABELS.seven_day : kind === 'spend_limit' ? 'Gasto extra' : kind
 
 export const limitShort = (kind: string) =>
   kind === 'five_hour' ? '5 h' : kind === 'seven_day' ? 'Semana' : kind === 'spend_limit' ? 'Gasto extra' : kind
@@ -260,18 +279,18 @@ export type Health = {
   worst?: ModelRouterLimit
 }
 
-/** General traffic light from the worst plan limit. */
-export const health = (limits: readonly ModelRouterLimit[]): Health => {
+/** The one traffic light, from the worst plan limit and the configurable thresholds. */
+export const health = (limits: readonly ModelRouterLimit[], th: Thresholds): Health => {
   const rel = planLimits(limits)
   const first = rel[0]
   if (first === undefined) return { level: 'none', color: 'gray', text: 'Sin datos de límites' }
   const worst = rel.reduce((a, b) => (b.percentUsed > a.percentUsed ? b : a), first)
   const p = Math.round(worst.percentUsed)
   const name = limitShort(worst.kind)
+  const lvl = levelOf(worst.percentUsed, th)
   if (p >= 100) return { level: 'danger', color: 'red', text: `Límite alcanzado: ${name} al ${p} %`, worst }
-  if (p >= 95) return { level: 'danger', color: 'red', text: `Límite casi agotado: ${name} al ${p} %`, worst }
-  if (p >= 80) return { level: 'warn', color: 'red', text: `Cuidado: ${name} al ${p} %`, worst }
-  if (p >= 60) return { level: 'ok', color: 'yellow', text: `Vas bien, con ojo: ${name} al ${p} %`, worst }
+  if (lvl === 'critico') return { level: 'danger', color: 'red', text: `Límite casi agotado: ${name} al ${p} %`, worst }
+  if (lvl === 'aviso') return { level: 'warn', color: 'yellow', text: `Cuidado: ${name} al ${p} %`, worst }
   return { level: 'ok', color: 'green', text: 'Vas bien', worst }
 }
 
@@ -283,9 +302,8 @@ export const healthShort = (h: Health) => {
   const p = Math.round(w.percentUsed)
   const n = limitTiny(w.kind)
   if (p >= 100) return `Límite ${n} ${p}%`
-  if (p >= 95) return `Casi agotado ${n} ${p}%`
-  if (p >= 80) return `Cuidado ${n} ${p}%`
-  if (p >= 60) return `Ojo ${n} ${p}%`
+  if (h.level === 'danger') return `Casi agotado ${n} ${p}%`
+  if (h.level === 'warn') return `Cuidado ${n} ${p}%`
   return 'Vas bien'
 }
 
@@ -318,7 +336,7 @@ export const icons = (surface: string | undefined) =>
         done: '✅',
         error: '❌',
         ok: '🟢',
-        warn: '🔴',
+        warn: '🟡',
         danger: '🔴',
         none: '⚪',
       }
@@ -381,16 +399,35 @@ export const spark = (values: readonly number[]) => {
 }
 
 /** Status line: `Router ● · 2 en curso · 5h 34%`; the router mark is ○ when paused. */
-export const statusText = (running: Record<ModelRouterLevel, number>, limits: readonly ModelRouterLimit[], enabled = true) => {
+export const statusText = (
+  running: Record<ModelRouterLevel, number>,
+  limits: readonly ModelRouterLimit[],
+  enabled = true,
+  th: Thresholds = DEFAULT_PREFS,
+) => {
   const parts: string[] = [enabled ? 'Router ●' : 'Router ○ pausado']
   const n = running.haiku + running.sonnet + running.opus
   if (n > 0) parts.push(`${n} en curso`)
   const five = findLimit(limits, 'five_hour')
   if (five) {
     const p = Math.round(five.percentUsed)
-    parts.push(`5h ${p}%${p >= 95 ? ' (casi agotado)' : p >= 80 ? ' (alto)' : ''}`)
+    const lvl = levelOf(five.percentUsed, th)
+    parts.push(`5h ${p}%${lvl === 'critico' ? ' (casi agotado)' : lvl === 'aviso' ? ' (alto)' : ''}`)
   }
   return parts.join(' · ')
+}
+
+/** Session tokens by model family (for the family split) and totals, from the per-model accumulator. */
+export const sessionOf = (models: ModelRouterModels): ModelRouterSessionTokens => {
+  const out = emptyTokens()
+  for (const [name, row] of Object.entries(models)) {
+    out.input += row.input
+    out.output += row.output
+    out.cacheRead += row.cacheRead
+    out.cacheWrite += row.cacheWrite
+    out.byModel[bucketOf(name)] += totalTokensOf(row)
+  }
+  return out
 }
 
 export type TextSummaryInput = {
@@ -403,7 +440,15 @@ export type TextSummaryInput = {
   enabled?: boolean
   running?: readonly ModelRouterTask[]
   sessionByModel?: Record<ModelRouterBucket, number>
+  models: ModelRouterModels
+  prefs: ModelRouterPrefs
   routeNote?: string
+}
+
+const limitRowText = (l: ModelRouterLimit, now: number, th: Thresholds) => {
+  const r = fmtReset(l.resetsAt, now)
+  const lvl = levelOf(l.percentUsed, th)
+  return `  ${limitLabel(l.kind)}: ${fmtPct(l.percentUsed)}${r !== '' ? ` · se reinicia en ${r}` : ''} · ${LEVEL_MARK[lvl]} ${LEVEL_NAME[lvl]}`
 }
 
 const split = (d: Record<ModelRouterBucket, number>, total: number) =>
@@ -413,19 +458,24 @@ const split = (d: Record<ModelRouterBucket, number>, total: number) =>
 
 /** Plain-text summary for `/model-router usage`, same order and words as the panel. */
 export const textSummary = (i: TextSummaryInput) => {
-  const h = health(i.limits)
+  const th = i.prefs
+  const h = health(i.limits, th)
   const lines: string[] = []
   lines.push(`Router ${i.enabled === false ? '○ Pausado' : '● Activo'} · ${h.text}`)
   if (i.enabled !== false && i.routeNote !== undefined) lines.push(`Enrutado: ${i.routeNote}`)
   lines.push('')
   lines.push('LÍMITES DE TU PLAN')
-  const rel = planLimits(i.limits)
-  if (rel.length === 0) lines.push('  Sin datos de límites (aparecen con una suscripción de Claude).')
-  for (const l of rel) {
-    const r = fmtReset(l.resetsAt, i.now)
-    lines.push(`  ${limitLabel(l.kind)}: ${fmtPct(l.percentUsed)}${r !== '' ? ` · se reinicia en ${r}` : ''}`)
+  for (const kind of WINDOWS) {
+    const l = findLimit(i.limits, kind)
+    if (l === undefined) {
+      lines.push(`  ${LABELS[kind]}: ${NO_DATA}`)
+      continue
+    }
+    lines.push(limitRowText(l, i.now, th))
   }
-  if (rel.some(l => l.percentUsed >= 80)) lines.push(`  ${HELP_HIGH}`)
+  for (const l of i.limits.filter(x => x.kind === 'spend_limit')) lines.push(limitRowText(l, i.now, th))
+  lines.push(`  ${alertsLine(th)}`)
+  if (planLimits(i.limits).some(l => l.percentUsed >= th.warn)) lines.push(`  ${HELP_HIGH}`)
   lines.push('')
   lines.push('AHORA MISMO')
   const running = i.running ?? []
@@ -442,6 +492,15 @@ export const textSummary = (i: TextSummaryInput) => {
       i.cost !== null ? ` · ${fmtUsd(i.cost)}` : ''
     }${i.contextPercent !== undefined ? ` · contexto al ${fmtPct(i.contextPercent)}` : ''}`,
   )
+  lines.push('')
+  lines.push('TOKENS POR MODELO (esta sesión)')
+  const names = Object.keys(i.models).sort()
+  if (names.length === 0) lines.push(`  ${NO_DATA}: aún no hay turnos completados en esta sesión.`)
+  for (const name of names) {
+    const r = i.models[name]
+    if (r !== undefined) lines.push(`  ${name}: ${modelRowText(r)}`)
+  }
+  if (names.length > 0) lines.push(`  Total: ${modelRowText(totalsOfModels(i.models))}`)
   lines.push('')
   lines.push('CONSUMO (todas las sesiones con model-router)')
   const row = (label: string, d: ModelRouterDay) =>

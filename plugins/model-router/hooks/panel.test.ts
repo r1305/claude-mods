@@ -58,6 +58,9 @@ const linesOf = (n: unknown): string[] => {
 
 const norm = (p: string) => p.replace(/\\/g, '/').replace(/^[A-Za-z]:/, '')
 
+// The plan limits are read at session start (the one reader); a pane test starts the session first.
+const begin = ($: Engine) => $.session.start({ cwd: '/w/proyecto-a', surface: 'terminal', isInteractive: true } as never)
+
 type Limits = { kind: string; percentUsed: number; resetsAt?: string }[]
 
 const FIVE_RESET = new Date(NOW + 2 * 3600 * 1000 + 10 * 60000).toISOString()
@@ -67,6 +70,7 @@ function world(on: On, opts: { limits?: Limits; files?: Record<string, string>; 
   const dir = '/cfg/model-router/usage'
   mock.clock(on, { now: NOW })
   mock.env(on, { CLAUDE_CONFIG_DIR: '/cfg' })
+  if (opts.openFails !== true) on('session.start', (_$, e) => ({ cwd: e.cwd }) as never)
   on('session.id', () => ({ value: 'sess-a' }) as never)
   on('session.cwd', () => ({ value: 'C:/work/proyecto-a' }) as never)
   on('fs.write', (_$, e) => {
@@ -158,6 +162,7 @@ async function seedTasks($: Engine) {
 
 test('resumen with data answers: how am I doing, what runs, which model spends', async ($, on) => {
   world(on, { limits: LIMITS_OK, files: seedFiles() })
+  await begin($)
   await seedTasks($)
   const ui = await $.ui.mount(pane())
   const text = await textOfPane(ui)
@@ -179,18 +184,21 @@ test('resumen with data answers: how am I doing, what runs, which model spends',
   expect(text).not.toContain('~0')
 })
 
-test('resumen with limits at 80% or more: red light and help sentence', async ($, on) => {
+test('resumen with limits at the aviso threshold: yellow light and help sentence', async ($, on) => {
   world(on, { limits: [{ kind: 'five_hour', percentUsed: 82, resetsAt: FIVE_RESET }, { kind: 'seven_day', percentUsed: 30 }] })
+  await begin($)
   const ui = await $.ui.mount(pane())
   const text = await textOfPane(ui)
   expect(text).toContain('Cuidado: 5 h al 82 %')
   expect(text).toContain('5 h se reinicia en 2 h 10 min')
   expect(text).toContain('Pasa a modelos más baratos o espera al reinicio.')
-  expect(JSON.stringify(await ui.drawn())).toContain('"color":"red"')
+  expect(JSON.stringify(await ui.drawn())).toContain('"color":"yellow"')
+  expect(JSON.stringify(await ui.drawn())).not.toContain('"color":"red"')
 })
 
 test('resumen with limits almost exhausted', async ($, on) => {
   world(on, { limits: [{ kind: 'seven_day', percentUsed: 97 }] })
+  await begin($)
   const ui = await $.ui.mount(pane())
   const text = await textOfPane(ui)
   expect(text).toContain('Límite casi agotado: Semana al 97 %')
@@ -199,6 +207,7 @@ test('resumen with limits almost exhausted', async ($, on) => {
 
 test('resumen without limits and without tasks shows friendly empty states', async ($, on) => {
   world(on)
+  await begin($)
   const ui = await $.ui.mount(pane())
   const text = await textOfPane(ui)
   expect(text).toContain('Sin datos de límites')
@@ -209,6 +218,7 @@ test('resumen without limits and without tasks shows friendly empty states', asy
 
 test('narrow viewport uses the compact one-line layout and never overflows', async ($, on) => {
   world(on, { limits: LIMITS_OK, files: seedFiles() })
+  await begin($)
   await seedTasks($)
   const ui = await $.ui.mount(pane({ cols: 40, rows: 40 }))
   const lines = linesOf(await ui.drawn())
@@ -218,6 +228,7 @@ test('narrow viewport uses the compact one-line layout and never overflows', asy
 
 test('low viewport keeps header, limits and running and points to the other tabs', async ($, on) => {
   world(on, { limits: LIMITS_OK, files: seedFiles() })
+  await begin($)
   await seedTasks($)
   const ui = await $.ui.mount(pane({ bodyRows: 16 }))
   const text = await textOfPane(ui)
@@ -230,6 +241,7 @@ test('low viewport keeps header, limits and running and points to the other tabs
 
 test('emoji surfaces draw emoji, terminal does not', async ($, on) => {
   world(on, { limits: LIMITS_OK })
+  await begin($)
   await $.agent.spawn(spawn('Buscar archivos de login'))
   const desktop = await textOfPane(await $.ui.mount(pane({ surface: 'desktop' })))
   expect(desktop).toContain('🟢')
@@ -240,6 +252,7 @@ test('emoji surfaces draw emoji, terminal does not', async ($, on) => {
 
 test('tareas tab lists what runs and the history', async ($, on) => {
   world(on, { limits: LIMITS_OK })
+  await begin($)
   await seedTasks($)
   const ui = await $.ui.mount(pane())
   await ui.press({ key: 'tab-tareas' })
@@ -255,6 +268,7 @@ test('tareas tab lists what runs and the history', async ($, on) => {
 
 test('tareas tab empty state', async ($, on) => {
   world(on)
+  await begin($)
   const ui = await $.ui.mount(pane())
   await ui.press({ key: 'tab-tareas' })
   const text = await textOfPane(ui)
@@ -263,6 +277,7 @@ test('tareas tab empty state', async ($, on) => {
 
 test('consumo tab: today vs 7 days, weekday chart, per-session with the current one marked', async ($, on) => {
   world(on, { limits: LIMITS_OK, files: seedFiles() })
+  await begin($)
   await seedTasks($)
   const ui = await $.ui.mount(pane())
   await ui.press({ key: 'tab-consumo' })
@@ -283,6 +298,7 @@ test('consumo tab: today vs 7 days, weekday chart, per-session with the current 
 
 test('consumo tab with little room falls back to a sparkline', async ($, on) => {
   world(on, { limits: LIMITS_OK, files: seedFiles() })
+  await begin($)
   const ui = await $.ui.mount(pane({ bodyRows: 17 }))
   await ui.press({ key: 'tab-consumo' })
   const text = await textOfPane(ui)
@@ -297,13 +313,14 @@ test('pause button flips the router state in the header and the status line', as
     statuses.push((e as { text?: string }).text)
     return { value: undefined } as never
   })
+  await begin($)
   const ui = await $.ui.mount(pane())
   expect(await textOfPane(ui)).toContain('Router ● Activo')
   await ui.press({ key: 'toggle' })
   const text = await textOfPane(ui)
   expect(text).toContain('Router ○ Pausado')
   expect(text).toContain('p Activar enrutado')
-  expect(statuses[statuses.length - 1]).toBe('Router ○ pausado')
+  expect(statuses[statuses.length - 1]).toBe('Router ○ pausado · 5h 34%')
 })
 
 test('command.run falls back to a friendly message instead of throwing', async ($, on) => {
@@ -331,6 +348,7 @@ test('session.start survives a failing command registration and pane open', asyn
 for (const cols of [30, 40, 45]) {
   test(`compact resumen at ${cols} columns: one line per element, bar sums to width`, async ($, on) => {
     world(on, { limits: LIMITS_OK, files: seedFiles() })
+    await begin($)
     await seedTasks($)
     const ui = await $.ui.mount(pane({ cols, rows: 50 }))
     const lines = linesOf(await ui.drawn())
@@ -350,6 +368,7 @@ for (const cols of [30, 40, 45]) {
 
 test('compact resumen with little height omits whole sections and hints it', async ($, on) => {
   world(on, { limits: LIMITS_OK, files: seedFiles() })
+  await begin($)
   await seedTasks($)
   const ui = await $.ui.mount(pane({ cols: 35, rows: 40, bodyRows: 12 }))
   const lines = linesOf(await ui.drawn())
@@ -380,6 +399,7 @@ const segmentsOf = (root: unknown): { width: string; grow: unknown; color: unkno
 
 test('desktop surface: the stacked split is a row of boxes, one per model, not a line of █', async ($, on) => {
   world(on, { limits: LIMITS_OK, files: seedFiles() })
+  await begin($)
   await seedTasks($)
   const ui = await $.ui.mount(pane({ surface: 'desktop' }))
   const tree = await ui.drawn()
@@ -398,6 +418,7 @@ test('desktop surface: the stacked split is a row of boxes, one per model, not a
 
 test('terminal surface keeps the character bar', async ($, on) => {
   world(on, { limits: LIMITS_OK, files: seedFiles() })
+  await begin($)
   await seedTasks($)
   const ui = await $.ui.mount(pane())
   const tree = await ui.drawn()

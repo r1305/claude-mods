@@ -40,6 +40,7 @@ export type ModelRouterLimit = {
   resetsAt?: string
 }
 
+/** Session token totals by model family, derived from `models` for the family split. */
 export type ModelRouterSessionTokens = {
   input: number
   output: number
@@ -50,6 +51,35 @@ export type ModelRouterSessionTokens = {
 
 export type ModelRouterContext = { percent?: number; tokens?: number; window: number }
 
+/** The two plan windows that carry alerts. */
+export type ModelRouterWindowKind = 'five_hour' | 'seven_day'
+
+/** Preferences in $.store: alerts shown or hidden, and the aviso and crítico thresholds in percent. */
+export type ModelRouterPrefs = {
+  alerts: boolean
+  warn: number
+  critical: number
+}
+
+/** Alert memory of one window: thresholds already alerted in its cycle and the last figure seen. */
+export type ModelRouterAlertMemory = {
+  resetsAt: string | null
+  lastPercent: number
+  fired: number[]
+}
+
+export type ModelRouterAlertMemories = Record<ModelRouterWindowKind, ModelRouterAlertMemory>
+
+/** Session tokens of one exact model name, from turn.complete usage. */
+export type ModelRouterModelTokens = {
+  input: number
+  output: number
+  cacheRead: number
+  cacheWrite: number
+}
+
+export type ModelRouterModels = Record<string, ModelRouterModelTokens>
+
 declare module 'claude-code' {
   interface PluginState {
     'model-router': {
@@ -58,10 +88,12 @@ declare module 'claude-code' {
       isPaneShown: boolean
       tab: 'resumen' | 'tareas' | 'consumo'
       days: Record<string, ModelRouterDay>
-      sessionTokens: ModelRouterSessionTokens
+      models: ModelRouterModels
       limits: ModelRouterLimit[]
       cost: number | null
       context: ModelRouterContext | null
+      prefs: ModelRouterPrefs
+      memories: ModelRouterAlertMemories
     }
   }
 }

@@ -1,7 +1,8 @@
 import { atom, read, update } from 'claude-code'
 import type { AgentSpawnResult, EngineInterface, Register, Timer } from 'claude-code'
 
-import type { ModelRouterLevel, ModelRouterLimit, ModelRouterTask, ModelRouterUsageFile } from '../types'
+import type { ModelRouterAlertMemories, ModelRouterLevel, ModelRouterLimit, ModelRouterModels, ModelRouterPrefs, ModelRouterTask, ModelRouterUsageFile } from '../types'
+import { DEFAULT_PREFS, PREFS_KEY, WINDOWS, addUsage, alertText, emptyMemories, evaluateAlerts, parseCommand, parsePrefs, windowsOf } from './quota'
 import { route, routeNote } from './route'
 import {
   FLUSH_MS,
@@ -9,9 +10,9 @@ import {
   aggregate,
   asUsageFile,
   bucketOf,
-  emptyTokens,
   mergeDays,
   parseJson,
+  sessionOf,
   statusText,
   textSummary,
   trimDays,
@@ -25,26 +26,34 @@ const MAX_TASKS = 200
 const REFRESH_MS = 30_000
 const LEVELS: ModelRouterLevel[] = ['haiku', 'sonnet', 'opus']
 
+const COMMAND = {
+  name: 'model-router',
+  description: 'Open the model router pane; "on" / "off" toggles automatic routing; "usage" shows plan limits and consumption; "alerts on|off" and "umbrales <aviso> <crítico>" set the alerts',
+  argumentHint: '[on|off|usage|alerts on|off|umbrales <aviso> <crítico>]',
+}
+
+const QUOTA_COMMAND = {
+  name: 'quota',
+  description: 'Alias of /model-router usage: plan limits, alerts and tokens per model.',
+}
+
 const tasks = atom({ plugin: 'model-router', key: 'tasks' } as const, [])
 const isEnabled = atom({ plugin: 'model-router', key: 'isEnabled' } as const, true)
 const isPaneShown = atom({ plugin: 'model-router', key: 'isPaneShown' } as const, false)
 const tab = atom({ plugin: 'model-router', key: 'tab' } as const, 'resumen')
 const days = atom({ plugin: 'model-router', key: 'days' } as const, {})
-const sessionTokens = atom({ plugin: 'model-router', key: 'sessionTokens' } as const, emptyTokens())
-const limits = atom({ plugin: 'model-router', key: 'limits' } as const, [])
-const cost = atom({ plugin: 'model-router', key: 'cost' } as const, null)
-const context = atom({ plugin: 'model-router', key: 'context' } as const, null)
+const models = atom({ plugin: 'model-router', key: 'models' } as const, {} as ModelRouterModels)
+const limits = atom({ plugin: 'model-router', key: 'limits' } as const, [] as ModelRouterLimit[])
+const cost = atom({ plugin: 'model-router', key: 'cost' } as const, null as number | null)
+const context = atom({ plugin: 'model-router', key: 'context' } as const, null as { percent?: number; tokens?: number; window: number } | null)
+const prefs = atom({ plugin: 'model-router', key: 'prefs' } as const, DEFAULT_PREFS as ModelRouterPrefs)
+const memories = atom({ plugin: 'model-router', key: 'memories' } as const, emptyMemories() as ModelRouterAlertMemories)
 
 const POLICY = [
   'Model routing: the model-router mod is a middleware for every Agent tool call (all agent types except forks and workflow agents).',
   'It picks the subagent model itself from a per-agent base/floor table, the task complexity and the account usage limits, and overrides any `model` you pass.',
   'You do not need to choose `model`; write a clear `description` and prompt. Do not spawn agents just to save tokens.',
 ].join('\n')
-
-const levelOf = (model: string | undefined): ModelRouterLevel | undefined => {
-  const m = (model ?? '').toLowerCase()
-  return LEVELS.find(l => m.includes(l))
-}
 
 const runningCounts = (list: readonly ModelRouterTask[]) => {
   const running = list.filter(t => t.status === 'running')
@@ -101,24 +110,67 @@ async function flush($: EngineInterface, isForced: boolean) {
   await $.fs.write(path, JSON.stringify(file))
 }
 
+/** Stores the plan limits and runs the alerts: once per threshold and window cycle, as toasts. */
+async function applyLimits($: EngineInterface, rows: readonly ModelRouterLimit[]) {
+  const kept: ModelRouterLimit[] = rows.map(l => ({
+    kind: l.kind,
+    percentUsed: l.percentUsed,
+    ...(l.resetsAt !== undefined ? { resetsAt: l.resetsAt } : {}),
+  }))
+  await update($, limits, () => kept).catch(() => undefined)
+  const current = windowsOf(kept)
+  const config = await read($, prefs)
+  const before = await read($, memories)
+  const after = emptyMemories()
+  const messages: string[] = []
+  for (const kind of WINDOWS) {
+    const window = current[kind]
+    const result = evaluateAlerts(before[kind], window, config)
+    after[kind] = result.memory
+    if (window !== null && result.alert !== undefined) messages.push(alertText(kind, result.alert, window))
+  }
+  await update($, memories, () => after).catch(() => undefined)
+  for (const message of messages) $.ui.toast(message)
+}
+
+/**
+ * The only place that reads the plan limits: `$.session.usage()`. It runs at session start,
+ * on each /model-router usage or /quota, and on the 30 s tick while the pane is open.
+ * session.measure hands its figures over without a read of its own.
+ */
+async function refreshLimits($: EngineInterface) {
+  const live = await $.session.usage().catch(() => undefined)
+  if (live === undefined) return
+  await update($, cost, () => live.cost?.usd ?? null).catch(() => undefined)
+  await update($, context, () => live.context).catch(() => undefined)
+  await applyLimits($, live.rateLimits)
+}
+
+async function loadPrefs($: EngineInterface): Promise<ModelRouterPrefs> {
+  try {
+    return parsePrefs(await $.store.get(PREFS_KEY))
+  } catch {
+    return DEFAULT_PREFS
+  }
+}
+
+async function savePrefs($: EngineInterface, value: ModelRouterPrefs) {
+  await update($, prefs, () => value).catch(() => undefined)
+  await $.store.set(PREFS_KEY, value).catch(() => undefined)
+}
+
 async function collect($: EngineInterface) {
-  const [id, cwd, now, mine, sess, limitsAtom, costAtom, ctxAtom, files] = await Promise.all([
+  const [id, cwd, now, mine, modelsNow, limitsNow, costNow, ctxNow, files] = await Promise.all([
     $.session.id().catch(() => 'sesion'),
     $.session.cwd().catch(() => ''),
     $.clock.now(),
     read($, days),
-    read($, sessionTokens),
+    read($, models),
     read($, limits),
     read($, cost),
     read($, context),
     readUsageFiles($).catch(() => [] as SessionFile[]),
   ])
-  let live: Awaited<ReturnType<EngineInterface['session']['usage']>> | undefined
-  try {
-    live = await $.session.usage()
-  } catch {
-    live = undefined
-  }
   const own = fileId(id)
   const prior = files.find(f => f.id === own)
   const project = lastSegment(cwd)
@@ -130,15 +182,36 @@ async function collect($: EngineInterface) {
     now,
     ownId: own,
     agg: aggregate(all, now),
-    sess,
-    limits: live?.rateLimits ?? limitsAtom,
-    cost: live?.cost?.usd ?? costAtom,
-    ctx: live?.context ?? ctxAtom,
+    models: modelsNow,
+    sess: sessionOf(modelsNow),
+    limits: limitsNow,
+    cost: costNow,
+    ctx: ctxNow,
   }
 }
 
-// Timer: redraws the pane (and flushes the usage file) every REFRESH_MS, only while the
-// pane is open. Cancelled at ui.close and session.end; a hot reload drops it with the old
+async function usageText($: EngineInterface) {
+  await refreshLimits($)
+  const [c, enabled, list, config] = await Promise.all([collect($), read($, isEnabled), read($, tasks), read($, prefs)])
+  const sessionTotal = Object.values(c.sess.byModel).reduce((s, n) => s + n, 0)
+  return textSummary({
+    agg: c.agg,
+    limits: c.limits,
+    now: c.now,
+    sessionTotal,
+    sessionByModel: c.sess.byModel,
+    models: c.models,
+    cost: c.cost,
+    enabled,
+    prefs: config,
+    running: list.filter(t => t.status === 'running'),
+    routeNote: routeNote(c.limits, config).text,
+    ...(c.ctx?.percent !== undefined ? { contextPercent: c.ctx.percent } : {}),
+  })
+}
+
+// Timer: refreshes the limits and redraws the pane every REFRESH_MS, only while the pane is
+// open. Cancelled at ui.close and session.end; a hot reload drops it with the old
 // environment and ui.render starts it again, so it never doubles.
 let tick: Timer | undefined
 const stopTick = () => {
@@ -148,38 +221,26 @@ const stopTick = () => {
 function startTick($: EngineInterface) {
   if (tick !== undefined) return
   tick = $.clock.every(REFRESH_MS, () => {
-    $.ui.invalidate('ui.render')
+    void refreshLimits($)
+      .then(() => $.ui.invalidate('ui.render'))
+      .catch(() => {})
     void flush($, false).catch(() => {})
   })
 }
 
 let seq = 0
 
-async function currentLimits($: EngineInterface): Promise<readonly ModelRouterLimit[]> {
-  let live: readonly ModelRouterLimit[] = []
-  try {
-    live = (await $.session.usage()).rateLimits
-  } catch {}
-  if (live.length > 0) return live
-  return read($, limits).catch(() => [] as ModelRouterLimit[])
-}
-
-async function refreshStatus($: EngineInterface, override?: readonly ModelRouterLimit[]) {
-  const [list, lims, enabled] = await Promise.all([read($, tasks), read($, limits), read($, isEnabled)])
-  $.ui.status(statusText(runningCounts(list), override ?? lims, enabled))
+async function refreshStatus($: EngineInterface) {
+  const [list, lims, enabled, config] = await Promise.all([read($, tasks), read($, limits), read($, isEnabled), read($, prefs)])
+  $.ui.status(statusText(runningCounts(list), lims, enabled, config))
 }
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
-    await $.command.register({
-      name: 'model-router',
-      description: 'Open the model router pane; "off" / "on" toggles automatic routing; "usage" shows consumption',
-      argumentHint: '[on|off|usage]',
-    })
-    try {
-      const u = await $.session.usage()
-      await update($, limits, () => u.rateLimits)
-    } catch {}
+    for (const spec of [COMMAND, QUOTA_COMMAND]) await $.command.register(spec).catch(() => undefined)
+    const config = await loadPrefs($)
+    await update($, prefs, () => config).catch(() => undefined)
+    await refreshLimits($)
     if (!(await read($, isPaneShown))) {
       await update($, isPaneShown, () => true)
       void $.ui.open({ id: PANE, title: 'Model router' }).catch(() => {})
@@ -204,36 +265,39 @@ export const register: Register = on => {
   }).catch(($, e, next) => next(e))
 
   on('command.run', { command: 'model-router' }, async ($, e) => {
-    const arg = e.args.trim().toLowerCase()
-    if (arg === 'on' || arg === 'off') {
-      await update($, isEnabled, () => arg === 'on')
+    const command = parseCommand(e.args)
+    if (command.kind === 'error') return { text: command.message }
+    if (command.kind === 'toggle') {
+      await update($, isEnabled, () => command.on)
       await refreshStatus($).catch(() => {})
       await $.ui.open({ id: PANE, title: 'Model router' }).catch(() => {})
-      return { text: `Model router: enrutado ${arg === 'on' ? 'activo' : 'pausado'}.` }
+      return { text: `Model router: enrutado ${command.on ? 'activo' : 'pausado'}.` }
     }
-    if (arg === 'usage') {
+    if (command.kind === 'alerts') {
+      const config = await read($, prefs)
+      await savePrefs($, { ...config, alerts: command.on })
+      return { text: `Alertas ${command.on ? 'activadas' : 'ocultas'}.` }
+    }
+    if (command.kind === 'thresholds') {
+      const config = await read($, prefs)
+      await savePrefs($, { ...config, warn: command.warn, critical: command.critical })
+      return { text: `Umbrales: aviso ${command.warn} %, crítico ${command.critical} %.` }
+    }
+    if (command.kind === 'usage') {
       await update($, tab, () => 'consumo' as const)
       await $.ui.open({ id: PANE, title: 'Model router' }).catch(() => {})
-      const [c, enabled, list] = await Promise.all([collect($), read($, isEnabled), read($, tasks)])
-      return {
-        text: textSummary({
-          agg: c.agg,
-          limits: c.limits,
-          now: c.now,
-          sessionTotal: Object.values(c.sess.byModel).reduce((s, n) => s + n, 0),
-          sessionByModel: c.sess.byModel,
-          cost: c.cost,
-          enabled,
-          running: list.filter(t => t.status === 'running'),
-          routeNote: routeNote(c.limits).text,
-          ...(c.ctx?.percent !== undefined ? { contextPercent: c.ctx.percent } : {}),
-        }),
-      }
+      return { text: await usageText($) }
     }
     await $.ui.open({ id: PANE, title: 'Model router' })
     const enabled = await read($, isEnabled)
     return { text: `Model router: panel abierto (enrutado ${enabled ? 'activo' : 'pausado'}).` }
   }).catch(() => ({ text: 'model-router: error interno, inténtalo de nuevo.' }))
+
+  on('command.run', { command: 'quota' }, async ($) => {
+    await update($, tab, () => 'consumo' as const)
+    await $.ui.open({ id: PANE, title: 'Model router' }).catch(() => {})
+    return { text: await usageText($) }
+  }).catch(() => ({ text: 'quota: error interno, inténtalo de nuevo.' }))
 
   on('prompt.compose', async ($, e, next) => {
     const out = await next(e)
@@ -248,11 +312,9 @@ export const register: Register = on => {
   }).catch(($, e, next) => next(e))
 
   on('agent.spawn', async ($, e, next) => {
-    const enabled = await read($, isEnabled)
+    const [enabled, lims, config] = await Promise.all([read($, isEnabled), read($, limits), read($, prefs)])
     const isRouted = enabled && !e.fork && !e.workflow
-    const decision = isRouted
-      ? route(e.subagentType ?? '', e.description ?? '', e.prompt ?? '', await currentLimits($), e.model)
-      : undefined
+    const decision = isRouted ? route(e.subagentType ?? '', e.description ?? '', e.prompt ?? '', lims, e.model, config) : undefined
     const chosen = decision?.model
     const startedAt = await $.clock.now()
     let r: AgentSpawnResult | undefined
@@ -292,16 +354,9 @@ export const register: Register = on => {
         const cacheRead = u.cache_read_input_tokens ?? 0
         const cacheWrite = u.cache_creation_input_tokens ?? 0
         const total = input + output + cacheRead + cacheWrite
-        const bucket = bucketOf(u.model)
         const now = await $.clock.now()
-        await update($, sessionTokens, s => ({
-          input: s.input + input,
-          output: s.output + output,
-          cacheRead: s.cacheRead + cacheRead,
-          cacheWrite: s.cacheWrite + cacheWrite,
-          byModel: { ...s.byModel, [bucket]: s.byModel[bucket] + total },
-        }))
-        await update($, days, d => addTokens(d, now, bucket, total))
+        await update($, models, prev => addUsage(prev, u.model ?? '', u))
+        await update($, days, d => addTokens(d, now, bucketOf(u.model), total))
         await flush($, false)
       } catch {}
     }
@@ -336,14 +391,14 @@ export const register: Register = on => {
 
   on('session.measure', async ($, e, next) => {
     try {
-      await update($, limits, () => e.rateLimits.map(l => ({ kind: l.kind, percentUsed: l.percentUsed, ...(l.resetsAt !== undefined ? { resetsAt: l.resetsAt } : {}) })))
       await update($, cost, () => e.cost?.usd ?? null)
       await update($, context, () => ({
         window: e.context.window,
         ...(e.context.tokens !== undefined ? { tokens: e.context.tokens } : {}),
         ...(e.context.percent !== undefined ? { percent: e.context.percent } : {}),
       }))
-      await refreshStatus($, e.rateLimits)
+      await applyLimits($, e.rateLimits)
+      await refreshStatus($)
       if (tick !== undefined) $.ui.invalidate('ui.render')
       await flush($, false)
     } catch {}
@@ -353,7 +408,13 @@ export const register: Register = on => {
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     startTick($)
     const els = $.ui.resolve(e)
-    const [enabled, view, c, list] = await Promise.all([read($, isEnabled), read($, tab), collect($), read($, tasks)])
+    const [enabled, view, c, list, config] = await Promise.all([
+      read($, isEnabled),
+      read($, tab),
+      collect($),
+      read($, tasks),
+      read($, prefs),
+    ])
     const tabId: TabId = view === 'tareas' || view === 'consumo' ? view : 'resumen'
     const rows = e.viewport?.rows ?? 30
     const scroll = e.props.scroll as { bodyRows?: number } | undefined
@@ -372,7 +433,9 @@ export const register: Register = on => {
         ownId: c.ownId,
         cost: c.cost,
         ctx: c.ctx,
-        route: routeNote(c.limits),
+        models: c.models,
+        prefs: config,
+        route: routeNote(c.limits, config),
       },
       {
         surface: e.surface,
@@ -393,4 +456,9 @@ export const register: Register = on => {
       },
     )
   }).catch(($, e, next) => next(e))
+}
+
+const levelOf = (model: string | undefined): ModelRouterLevel | undefined => {
+  const m = (model ?? '').toLowerCase()
+  return LEVELS.find(l => m.includes(l))
 }
