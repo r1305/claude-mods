@@ -83,14 +83,35 @@ test('classify: negatives', () => {
   expect(classify('Buscar uso', `busca donde se usa formatDate. ${'Restricciones: seguridad, pagos/Stripe, cPanel. '.repeat(20)}`)).not.toBe('opus')
 })
 
-test('named agent without model is not rewritten', async ($, on) => {
+test('named agents are routed with their base and floor', async ($, on) => {
   mock.clock(on)
   const seen: { model?: unknown } = { model: 'unset' }
   engineSpawn(on, seen)
-  await $.agent.spawn(spawnInput({ subagentType: 'review', description: 'Review cambios' }))
-  expect(seen.model).toBeUndefined()
+  await $.agent.spawn(spawnInput({ subagentType: 'review', description: 'Review cambios', prompt: 'revisa el diff' }))
+  expect(seen.model).toBe('opus')
+  await $.agent.spawn(spawnInput({ subagentType: 'review', description: 'Buscar usos', prompt: 'busca donde se usa el helper' }))
+  expect(seen.model).toBe('sonnet')
+  await $.agent.spawn(spawnInput({ subagentType: 'qa', description: 'Validar cambios', prompt: 'valida que compila y pasa los tests' }))
+  expect(seen.model).toBe('haiku')
+  await $.agent.spawn(spawnInput({ subagentType: 'qa', description: 'Validar con BD prod', prompt: 'valida el cambio contra la BD prod' }))
+  expect(seen.model).toBe('sonnet')
+  await $.agent.spawn(spawnInput({ subagentType: 'dev', description: 'Refactor de pagos multiarchivo', prompt: 'refactoriza el modulo de pagos' }))
+  expect(seen.model).toBe('opus')
+  await $.agent.spawn(spawnInput({ subagentType: 'some-plugin:writer', description: 'Cambiar color', prompt: 'cambia el color del boton en css' }))
+  expect(seen.model).toBe('haiku')
   const ui = await $.ui.mount(PANE)
-  expect(await tareasText(ui)).toMatch(/Review cambios.*\(review\)/)
+  expect(await tareasText(ui)).toMatch(/Cambiar color.*\(auto\)/)
+})
+
+test('usage limits lower the routed model', async ($, on) => {
+  mock.clock(on)
+  on('session.usage', () => ({ value: { startedAt: 0, context: { window: 1 }, rateLimits: [{ kind: 'five_hour', percentUsed: 96 }] } }) as never)
+  const seen: { model?: unknown } = {}
+  engineSpawn(on, seen)
+  await $.agent.spawn(spawnInput({ subagentType: 'dev', description: 'Refactor de pagos multiarchivo', prompt: 'refactoriza el modulo de pagos' }))
+  expect(seen.model).toBe('haiku')
+  await $.agent.spawn(spawnInput({ subagentType: 'review', description: 'Review cambios', prompt: 'revisa el diff' }))
+  expect(seen.model).toBe('sonnet')
 })
 
 test('fork is not rewritten', async ($, on) => {
@@ -101,14 +122,14 @@ test('fork is not rewritten', async ($, on) => {
   expect(seen.model).toBeUndefined()
 })
 
-test('general-purpose without model gets one; explicit model respected', async ($, on) => {
+test('general-purpose gets a model; an explicit model is recorded but the router decides', async ($, on) => {
   mock.clock(on)
   const seen: { model?: unknown } = {}
   engineSpawn(on, seen)
   await $.agent.spawn(spawnInput({}))
   expect(seen.model).toBe('haiku')
   await $.agent.spawn(spawnInput({ description: 'Integrar pagos', prompt: 'integrar Stripe', model: 'haiku' }))
-  expect(seen.model).toBe('haiku')
+  expect(seen.model).toBe('opus')
   await $.agent.spawn(spawnInput({ subagentType: 'Explore', description: 'Integrar pagos', prompt: 'integrar Stripe' }))
   expect(seen.model).toBe('opus')
 })

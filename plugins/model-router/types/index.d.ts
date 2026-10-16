@@ -9,6 +9,10 @@ export type ModelRouterTask = {
   subagentType: string
   /** 'auto': classified by this mod; 'explícito': the call set `model`; 'agente': the agent's own model */
   source: 'explícito' | 'auto' | 'agente'
+  /** the `model` the call asked for, recorded when the router decided instead */
+  requested?: string
+  /** why the router picked this model (rule, usage downgrades) */
+  reason?: string
   status: 'running' | 'done' | 'error'
   /** ms since epoch */
   startedAt: number

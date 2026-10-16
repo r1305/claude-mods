@@ -403,6 +403,7 @@ export type TextSummaryInput = {
   enabled?: boolean
   running?: readonly ModelRouterTask[]
   sessionByModel?: Record<ModelRouterBucket, number>
+  routeNote?: string
 }
 
 const split = (d: Record<ModelRouterBucket, number>, total: number) =>
@@ -415,6 +416,7 @@ export const textSummary = (i: TextSummaryInput) => {
   const h = health(i.limits)
   const lines: string[] = []
   lines.push(`Router ${i.enabled === false ? '○ Pausado' : '● Activo'} · ${h.text}`)
+  if (i.enabled !== false && i.routeNote !== undefined) lines.push(`Enrutado: ${i.routeNote}`)
   lines.push('')
   lines.push('LÍMITES DE TU PLAN')
   const rel = planLimits(i.limits)

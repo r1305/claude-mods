@@ -47,6 +47,7 @@ export type PanelData = {
   ownId: string
   cost: number | null
   ctx: ModelRouterContext | null
+  route?: { text: string; level: 'none' | 'ok' | 'high' | 'critical' }
 }
 
 export type PanelOpts = {
@@ -710,7 +711,16 @@ export function renderPanel(els: Els, d: PanelData, o: PanelOpts): El {
         ['Router ', BOLD],
         [`${on ? ic.ok : ic.none} ${on ? 'Activo' : 'Pausado'}`, { bold: true, color: on ? 'green' : 'yellow' }],
         ...(cols >= 56
-          ? ([[on ? '  elige el modelo de los subagentes sin modelo' : '  no se cambia el modelo de los subagentes', DIM]] as Seg[])
+          ? ([
+              [
+                on ? `  ${d.route?.text ?? 'elige el modelo de todos los subagentes'}` : '  no se cambia el modelo de los subagentes',
+                on && d.route?.level === 'critical'
+                  ? { bold: true, color: 'red' }
+                  : on && d.route?.level === 'high'
+                    ? { bold: true, color: 'yellow' }
+                    : DIM,
+              ],
+            ] as Seg[])
           : []),
       ])}
       {line('h2', [

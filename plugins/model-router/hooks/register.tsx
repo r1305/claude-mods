@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { AgentSpawnResult, EngineInterface, Register, Timer } from 'claude-code'
 
 import type { ModelRouterLevel, ModelRouterLimit, ModelRouterTask, ModelRouterUsageFile } from '../types'
-import { classify } from './classify'
+import { route, routeNote } from './route'
 import {
   FLUSH_MS,
   addTokens,
@@ -24,7 +24,6 @@ const PANE = 'model-router'
 const MAX_TASKS = 200
 const REFRESH_MS = 30_000
 const LEVELS: ModelRouterLevel[] = ['haiku', 'sonnet', 'opus']
-const ROUTABLE = new Set(['general-purpose', 'Explore', ''])
 
 const tasks = atom({ plugin: 'model-router', key: 'tasks' } as const, [])
 const isEnabled = atom({ plugin: 'model-router', key: 'isEnabled' } as const, true)
@@ -37,9 +36,9 @@ const cost = atom({ plugin: 'model-router', key: 'cost' } as const, null)
 const context = atom({ plugin: 'model-router', key: 'context' } as const, null)
 
 const POLICY = [
-  'Model routing: when you delegate with the Agent tool to a general-purpose/Explore agent (no model of its own), set `model`:',
-  'haiku for lookups/reads/trivial edits, sonnet by default, opus only for architecture/security/payments/concurrency/unclear bugs.',
-  'Do not spawn agents just to save tokens. Project model tables (CLAUDE.md) take precedence.',
+  'Model routing: the model-router mod is a middleware for every Agent tool call (all agent types except forks and workflow agents).',
+  'It picks the subagent model itself from a per-agent base/floor table, the task complexity and the account usage limits, and overrides any `model` you pass.',
+  'You do not need to choose `model`; write a clear `description` and prompt. Do not spawn agents just to save tokens.',
 ].join('\n')
 
 const levelOf = (model: string | undefined): ModelRouterLevel | undefined => {
@@ -156,6 +155,15 @@ function startTick($: EngineInterface) {
 
 let seq = 0
 
+async function currentLimits($: EngineInterface): Promise<readonly ModelRouterLimit[]> {
+  let live: readonly ModelRouterLimit[] = []
+  try {
+    live = (await $.session.usage()).rateLimits
+  } catch {}
+  if (live.length > 0) return live
+  return read($, limits).catch(() => [] as ModelRouterLimit[])
+}
+
 async function refreshStatus($: EngineInterface, override?: readonly ModelRouterLimit[]) {
   const [list, lims, enabled] = await Promise.all([read($, tasks), read($, limits), read($, isEnabled)])
   $.ui.status(statusText(runningCounts(list), override ?? lims, enabled))
@@ -217,6 +225,7 @@ export const register: Register = on => {
           cost: c.cost,
           enabled,
           running: list.filter(t => t.status === 'running'),
+          routeNote: routeNote(c.limits).text,
           ...(c.ctx?.percent !== undefined ? { contextPercent: c.ctx.percent } : {}),
         }),
       }
@@ -240,9 +249,11 @@ export const register: Register = on => {
 
   on('agent.spawn', async ($, e, next) => {
     const enabled = await read($, isEnabled)
-    const isRouted =
-      enabled && !e.fork && !e.workflow && e.model === undefined && ROUTABLE.has(e.subagentType ?? '')
-    const chosen = isRouted ? classify(e.description ?? '', e.prompt ?? '') : undefined
+    const isRouted = enabled && !e.fork && !e.workflow
+    const decision = isRouted
+      ? route(e.subagentType ?? '', e.description ?? '', e.prompt ?? '', await currentLimits($), e.model)
+      : undefined
+    const chosen = decision?.model
     const startedAt = await $.clock.now()
     let r: AgentSpawnResult | undefined
     try {
@@ -260,6 +271,8 @@ export const register: Register = on => {
             description: e.description ?? '',
             subagentType: e.fork ? 'fork' : e.subagentType ?? '',
             source: chosen ? 'auto' : e.model !== undefined && !e.fork ? 'explícito' : 'agente',
+            ...(chosen && e.model !== undefined && e.model !== '' ? { requested: e.model } : {}),
+            ...(decision ? { reason: decision.reason } : {}),
             status: failed ? 'error' : 'running',
             startedAt,
           }
@@ -359,6 +372,7 @@ export const register: Register = on => {
         ownId: c.ownId,
         cost: c.cost,
         ctx: c.ctx,
+        route: routeNote(c.limits),
       },
       {
         surface: e.surface,

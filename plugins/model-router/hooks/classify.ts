@@ -1,41 +1,51 @@
 import type { ModelRouterLevel } from '../types'
 
-export const COMPLEX =
-  /arquitectur|architect|\bauth|autenticaci|autorizaci|oauth|\bjwt\b|culqi|stripe|mercadopago|paypal|izipay|pasarela|concurren|race condition|condici[oó]n de carrera|deadlock|transacci|(?<![\w-])lock(s|ing)?\b|migraci|migration|rediseñ|redesign|vulnerab|cifrad|encrypt|root cause|causa ra[ií]z|sin causa|unknown cause|intermitente|flaky|debug|depur|investig|analiz|optimiz|rendimiento|performance|N\+1|permis|\bIDOR\b|\bXSS\b|inyecci|injection|password|contraseñ/i
+export const STRONG =
+  /\barquitectur\w*|\barchitect\w*|\brediseñ\w*|\bredesign\w*|\broot cause\b|\bcausa ra[ií]z\b|\bsin causa\b|\bunknown cause\b|\bintermitentes?\b|\bflaky\b|\brace conditions?\b|\bcondici[oó]n(es)? de carrera\b|\bdeadlocks?\b|\bdebug\w*|\bdepur\w*|\binvestig\w*|\banaliz\w*|\boptimiz\w*|\brendimiento\b|\bperformance\b|\bN\+1\b|\bmulti-?(archivos?|files?|m[oó]dulos?|modules?)\b|\bvarios (archivos|m[oó]dulos)\b|\bacross (files|modules)\b/i
 
-export const GENERIC = /refactor|seguridad|security|\bpagos?\b|payments?\b/i
+export const DOMAIN =
+  /\bauth(n|z|entication|orization)?\b|\bautenticaci\w*|\bautorizaci\w*|\boauth\w*|\bjwt\b|\bpasswords?\b|\bcontraseñ\w*|\bpermis\w*|\bvulnerab\w*|\bcifrad\w*|\bencrypt\w*|\binyecci\w*|\binjection\b|\bIDOR\b|\bXSS\b|\bseguridad\b|\bsecurity\b|\bpagos?\b|\bpayments?\b|\bcheckout\b|\bbilling\b|\bcobros?\b|\bconcurren\w*|\btransacci\w*|\btransactions?\b|(?<![\w-])lock(s|ing)?\b|\bmigraci\w*|\bmigrations?\b|\brefactor\w*/i
 
-export const SAFE_GENERIC = /copias? de seguridad|backups?/gi
+export const SAFE = /\bcopias? de seguridad\b|\bbackups?\b/gi
 
 export const CHANGE_VERB =
-  /\bimplement\w*|\bintegr\w*|\brefactoriz\w*|\bcambi\w*|\bmodific\w*|\bañad\w*|\bagreg\w*|\bcrea\w*|\badd\b|\bchange\b|\bfix\w*|\barregl\w*|\bcorrig\w*|\brewrite\b|\breescrib\w*|\bmigr\w*|\bredise\w*/i
+  /\bimplement\w*|\bintegr\w*|\brefactor\w*|\bcambi\w*|\bmodific\w*|\bañad\w*|\bagreg\w*|\bcrea(r|te|do|da)?\b|\badd\b|\bchange\b|\bfix\w*|\barregl\w*|\bcorrig\w*|\brewrite\b|\breescrib\w*|\bmigr\w*|\bredise\w*|\bescrib\w*|\bwrite\b|\bupdate\b|\bactualiz\w*|\belimin\w*|\bborra\w*|\bdelete\b|\bremove\b/i
 
 export const COSMETIC =
-  /\btexto\b|\btext\b|\bcopy\b|\bcss\b|\bestilos?\b|\bstyles?\b|\bcolou?r\b|\btypo\b|\blabel\b|\betiqueta\b|bot[oó]n|\bbutton\b|\biconos?\b|\bicons?\b|\breadme\b|\bcomentarios?\b|\bcomments?\b/i
+  /\btexto\b|\btext\b|\bcopy\b|\bcss\b|\bestilos?\b|\bstyles?\b|\bcolou?r\b|\btypo\b|\blabel\b|\betiqueta\b|\bbot[oó]n\b|\bbutton\b|\biconos?\b|\bicons?\b|\breadme\b|\bcomentarios?\b|\bcomments?\b/i
 
-export const SIMPLE =
-  /\bbusca(r|ndo)?\b|\bsearch(es|ing)?\b|\bfind\b|\blocate\b|\bencuentra\b|d[oó]nde est|where is|\blee\b|\bleer\b|\bread\b|\blist\b|\blista(r|do)?\b|\bexplora(r)?\b|\bexplore\b|\brenombr\w*|\brename\b|\btypo\b|\btexto\b|\btext\b|\bcopy\b|\bcss\b|\bestilos?\b|\bstyles?\b|\bcolou?r\b|\bcomentarios?\b|\bcomments?\b|\breadme\b|\bresumen\b|\bsummar\w*|\bgrep\b|\bglob\b|\bmapea\w*/i
+export const READ_ONLY =
+  /\bbusca(r|ndo)?\b|\bsearch(es|ing)?\b|\bfind\b|\blocate\b|\bencuentra\b|\bd[oó]nde (est|se)\w*|\bwhere (is|are|does)\b|\blee\b|\bleer\b|\bread\b|\blist\b|\blista(r|do)?\b|\bexplora(r)?\b|\bexplore\b|\bresum\w*|\bsummar\w*|\bgrep\b|\bglob\b|\bmapea\w*/i
+
+export const LIGHT_EDIT = /\brenombr\w*|\brename\b|\btypo\b/i
+
+export const INVESTIGATE = /\bbugs?\b|\berror(es)?\b|\bfall(a|o|an)\b|\bpor qu[eé](?![a-z])|\bwhy\b|\bcrash\w*/i
 
 export const MEDIUM =
-  /\bimplement\w*|\bfeatures?\b|funcionalidad|\bcrea(r|te)?\b|\bcreate\b|\badd\b|\bagrega\w*|\bfix\w*|\barregl\w*|\bcorrig\w*|bugs?\b|\btests?\b|\bprueba\w*|\bendpoints?\b|\bcomponentes?\b|\bcomponents?\b|\bvalid\w*/i
+  /\bimplement\w*|\bfeatures?\b|\bfuncionalidad\w*|\bendpoints?\b|\bcomponentes?\b|\bcomponents?\b|\btests?\b|\bprueba\w*|\bbugs?\b|\bfix\w*|\barregl\w*|\bcorrig\w*/i
 
-const firstSentence = (prompt: string) =>
-  (prompt.split(/[.!?\n]/).find(s => s.trim() !== '') ?? '').slice(0, 300)
+export const head = (prompt: string) =>
+  prompt
+    .split(/[.!?\n]/)
+    .filter(s => s.trim() !== '')
+    .slice(0, 2)
+    .join('. ')
+    .slice(0, 400)
 
-const isGenericComplex = (description: string, sentence: string) => {
-  const d = description.replace(SAFE_GENERIC, ' ')
-  const s = sentence.replace(SAFE_GENERIC, ' ')
-  if (COSMETIC.test(d) || COSMETIC.test(s)) return false
-  return GENERIC.test(d) || (GENERIC.test(s) && CHANGE_VERB.test(s))
-}
+const clean = (s: string) => s.replace(SAFE, ' ')
 
 export function classify(description: string, prompt: string): ModelRouterLevel {
-  const sentence = firstSentence(prompt)
-  const head = `${description}\n${sentence}`
-  const isComplex = COMPLEX.test(head.replace(SAFE_GENERIC, ' ')) || isGenericComplex(description, sentence)
-  if (isComplex) return 'opus'
-  const all = `${description}\n${prompt}`
-  const isSimple = SIMPLE.test(all) && !MEDIUM.test(all) && !COMPLEX.test(all.replace(SAFE_GENERIC, ' '))
-  if (prompt.length < 600 && isSimple) return 'haiku'
+  const desc = clean(description)
+  const top = clean(head(prompt))
+  const all = clean(`${description}\n${prompt}`)
+  const isStrong = STRONG.test(all)
+  const isChange = CHANGE_VERB.test(all)
+  const isReadOnly = READ_ONLY.test(`${desc}\n${top}`) && !isChange && !INVESTIGATE.test(all) && !isStrong
+  if (isReadOnly) return 'haiku'
+  if (isStrong) return 'opus'
+  const isCosmetic = COSMETIC.test(desc) || COSMETIC.test(top)
+  if (!isCosmetic && (DOMAIN.test(desc) || (DOMAIN.test(top) && CHANGE_VERB.test(top)))) return 'opus'
+  const isLight = (LIGHT_EDIT.test(all) || isCosmetic) && !MEDIUM.test(all) && !DOMAIN.test(`${desc}\n${top}`)
+  if (isLight) return 'haiku'
   return 'sonnet'
 }
