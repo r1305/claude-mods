@@ -77,7 +77,7 @@ test('turning simple off restores every hidden tool row', async ($, on) => {
   expect(await tool.drawn()).not.toMatchObject({ props: { display: 'none' } })
 })
 
-test('the panel is absent while idle and shows en curso, pending and terminado', async ($, on) => {
+test('the panel is absent while idle and with no turn, and shows en curso and pendiente during a turn', async ($, on) => {
   world(on)
   on('tool.check', () => ({ decision: 'ask' }) as never)
   await start($)
@@ -92,10 +92,64 @@ test('the panel is absent while idle and shows en curso, pending and terminado',
   await $.tool.check({ tool: 'Bash', input: { command: 'ls' }, tool_use_id: 'c1' } as never)
   const waiting = await $.ui.mount(above())
   expect(await waiting.find({ type: 'Text', text: /Pendiente de mi respuesta/ })).toBeDefined()
+})
 
-  await $.turn.complete({ reason: 'answer', turnId: 't1' } as never)
-  const done = await $.ui.mount(above())
-  expect(await done.find({ type: 'Text', text: /Terminado/ })).toBeDefined()
+test('sin turno ni pasos no se dibuja el panel', async ($, on) => {
+  world(on)
+  await start($)
+
+  const panel = await $.ui.mount(above())
+  expect(await panel.find({ type: 'Text', text: /Estado/ })).toBeUndefined()
+  expect(await panel.find({ type: 'Text', text: /Tiempo/ })).toBeUndefined()
+})
+
+test('turno activo se dibuja con estado y tiempo, sin el texto de plan ausente', async ($, on) => {
+  world(on)
+  await start($)
+
+  await $.turn.start({ text: 'hola', turnId: 'a1' } as never)
+  const panel = await $.ui.mount(above())
+  expect(await panel.find({ type: 'Text', text: /En curso/ })).toBeDefined()
+  expect(await panel.find({ type: 'Text', text: /Tiempo: 00:00/ })).toBeDefined()
+  expect(await panel.find({ type: 'Text', text: /Sin plan emitido por la sesión/ })).toBeUndefined()
+})
+
+test('pasos reales se dibujan aunque el turno haya terminado', async ($, on) => {
+  world(on)
+  on('tool.call', { tool: 'TodoWrite' }, () => ({ result: {} }) as never)
+  await start($)
+
+  await $.turn.start({ text: 'hola', turnId: 'a2' } as never)
+  await $.tool.call({
+    tool: 'TodoWrite',
+    todos: [{ content: 'Leer el código', status: 'completed', activeForm: 'Leyendo el código' }],
+  } as never)
+  await $.turn.complete({ reason: 'answer', turnId: 'a2' } as never)
+
+  const panel = await $.ui.mount(above())
+  expect(await panel.find({ type: 'Text', text: /Terminado/ })).toBeDefined()
+  expect(await panel.find({ type: 'Text', text: /\[x\] Leer el código/ })).toBeDefined()
+})
+
+test('un turno terminado con error se dibuja como detenido', async ($, on) => {
+  world(on)
+  await start($)
+
+  await $.turn.start({ text: 'hola', turnId: 'a3' } as never)
+  await $.turn.complete({ reason: 'error', turnId: 'a3' } as never)
+  const panel = await $.ui.mount(above())
+  expect(await panel.find({ type: 'Text', text: /Detenido/ })).toBeDefined()
+})
+
+test('un turno terminado normal sin nada que destacar no deja panel', async ($, on) => {
+  world(on)
+  await start($)
+
+  await $.turn.start({ text: 'hola', turnId: 'a4' } as never)
+  await $.turn.complete({ reason: 'answer', turnId: 'a4' } as never)
+  const panel = await $.ui.mount(above())
+  expect(await panel.find({ type: 'Text', text: /Estado/ })).toBeUndefined()
+  expect(await panel.find({ type: 'Text', text: /Terminado/ })).toBeUndefined()
 })
 
 test('an interrupted turn shows detenido, never terminado', async ($, on) => {
@@ -188,21 +242,25 @@ test('an interrupted turn with a permission still pending shows detenido', async
   expect(await panel.find({ type: 'Text', text: /Pendiente de mi respuesta/ })).toBeUndefined()
 })
 
-test('a turn with no plan says so in the panel', async ($, on) => {
+test('a running turn without plan shows estado and tiempo, never the old no-plan text', async ($, on) => {
   world(on)
   await start($)
 
   await $.turn.start({ text: 'hola', turnId: 't7' } as never)
   const panel = await $.ui.mount(above())
-  expect(await panel.find({ type: 'Text', text: /Sin plan emitido por la sesión/ })).toBeDefined()
+  expect(await panel.find({ type: 'Text', text: /Sin plan emitido por la sesión/ })).toBeUndefined()
+  expect(await panel.find({ type: 'Text', text: /En curso/ })).toBeDefined()
+  expect(await panel.find({ type: 'Text', text: /Tiempo/ })).toBeDefined()
 })
 
 test('the elapsed time stops growing when the turn ends and when the session ends', async ($, on) => {
   const clock = world(on)
   on('session.end', () => ({ sessionId: 's1' }) as never)
+  on('tool.call', { tool: 'TodoWrite' }, () => ({ result: {} }) as never)
   await start($)
 
   await $.turn.start({ text: 'hola', turnId: 't8' } as never)
+  await $.tool.call({ tool: 'TodoWrite', todos: [{ content: 'Paso', status: 'in_progress', activeForm: 'Dando un paso' }] } as never)
   await clock.advance(3000)
   await $.turn.complete({ reason: 'answer', turnId: 't8' } as never)
   await clock.advance(5000)

@@ -51,6 +51,10 @@ export function panelState(turn: CleanViewTurn, waiting: boolean): PanelState {
   return waiting ? 'pendiente' : 'en-curso'
 }
 
+export function panelVisible(turn: CleanViewTurn, waiting: boolean, hasSteps: boolean): boolean {
+  return turn === 'running' || turn === 'stopped' || waiting || hasSteps
+}
+
 export function turnEnd(reason: string): 'done' | 'stopped' {
   return reason === 'answer' ? 'done' : 'stopped'
 }

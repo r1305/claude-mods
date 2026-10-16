@@ -14,6 +14,7 @@ import {
   keepRow,
   markOf,
   panelState,
+  panelVisible,
   parseCommand,
   parsePref,
   stepsOf,
@@ -169,12 +170,13 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    if (e.props.hasSurvey) return next(e)
     const status = await read($, turn)
-    if (status === 'idle' || e.props.hasSurvey) return next(e)
-
-    const isOn = await read($, enabled)
     const pending = await read($, waiting)
     const plan = await read($, steps)
+    if (!panelVisible(status, pending.length > 0, plan.length > 0)) return next(e)
+
+    const isOn = await read($, enabled)
     const started = await read($, startedAt)
     const current = await read($, now)
     const label = LABELS[panelState(status, pending.length > 0)] ?? ''
@@ -182,14 +184,13 @@ export const register: Register = on => {
 
     return (
       <Box flexDirection="column" borderStyle="round" paddingX={1}>
-        <Text bold>{`Estado: ${label}`}</Text>
-        {plan.length === 0 ? <Text dimColor>Sin plan emitido por la sesión</Text> : null}
+        {label === '' ? null : <Text bold>{`Estado: ${label}`}</Text>}
         {plan.map((step, index) => (
           <Text key={`${index}:${step.content}`} bold={step.status === 'in_progress'} dimColor={step.status === 'completed'}>
             {`${markOf(step.status)} ${step.status === 'in_progress' ? step.activeForm : step.content}`}
           </Text>
         ))}
-        <Text dimColor>{`Tiempo: ${formatElapsed(current - started)}`}</Text>
+        {status === 'idle' ? null : <Text dimColor>{`Tiempo: ${formatElapsed(current - started)}`}</Text>}
         <Button
           key="clean-view-toggle"
           label={isOn ? 'Vista simple: on' : 'Vista simple: off'}

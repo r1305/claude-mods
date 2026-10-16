@@ -1,6 +1,6 @@
 import { test, expect } from 'claude-code/testing'
 
-import { addPending, dropPending, formatElapsed, isPendingVerdict, keepGroup, keepRow, markOf, panelState, parseCommand, parsePref, stepsOf, turnEnd } from './logic'
+import { addPending, dropPending, formatElapsed, isPendingVerdict, keepGroup, keepRow, markOf, panelState, panelVisible, parseCommand, parsePref, stepsOf, turnEnd } from './logic'
 
 test('pending permissions are a set: finishing one call keeps the others waiting', () => {
   const two = addPending(addPending([], 'c1'), 'c2')
@@ -22,6 +22,16 @@ test('panel state: idle hides, running is en curso, a pending answer wins, end r
   expect(turnEnd('aborted')).toBe('stopped')
   expect(turnEnd('error')).toBe('stopped')
   expect(turnEnd('refusal')).toBe('stopped')
+})
+
+test('the panel is drawn only with something real: a running turn, steps, a pending answer or a stopped turn', () => {
+  expect(panelVisible('idle', false, false)).toBe(false)
+  expect(panelVisible('done', false, false)).toBe(false)
+  expect(panelVisible('running', false, false)).toBe(true)
+  expect(panelVisible('idle', false, true)).toBe(true)
+  expect(panelVisible('done', false, true)).toBe(true)
+  expect(panelVisible('done', true, false)).toBe(true)
+  expect(panelVisible('stopped', false, false)).toBe(true)
 })
 
 test('a permission verdict is pending only when it asks the person', () => {

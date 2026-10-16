@@ -1,6 +1,6 @@
 {
   "name": "clean-view",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "author": { "name": "r1305" },
   "description": "Vista limpia: panel sobre el cuadro de texto con pasos, tiempo y estado (terminado, detenido, pendiente de mi respuesta) y modo simple que oculta las filas técnicas de herramientas. /simple on|off.",
   "types": "./types/index.d.ts"
