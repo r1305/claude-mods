@@ -19,7 +19,6 @@ import {
 } from './usage'
 import type { SessionFile } from './usage'
 import { renderPanel } from './view'
-import type { TabId } from './view'
 
 const PANE = 'model-router'
 const MAX_TASKS = 200
@@ -40,7 +39,6 @@ const QUOTA_COMMAND = {
 const tasks = atom({ plugin: 'model-router', key: 'tasks' } as const, [])
 const isEnabled = atom({ plugin: 'model-router', key: 'isEnabled' } as const, true)
 const isPaneShown = atom({ plugin: 'model-router', key: 'isPaneShown' } as const, false)
-const tab = atom({ plugin: 'model-router', key: 'tab' } as const, 'resumen')
 const days = atom({ plugin: 'model-router', key: 'days' } as const, {})
 const models = atom({ plugin: 'model-router', key: 'models' } as const, {} as ModelRouterModels)
 const limits = atom({ plugin: 'model-router', key: 'limits' } as const, [] as ModelRouterLimit[])
@@ -54,12 +52,6 @@ const POLICY = [
   'It picks the subagent model itself from a per-agent base/floor table, the task complexity and the account usage limits, and overrides any `model` you pass.',
   'You do not need to choose `model`; write a clear `description` and prompt. Do not spawn agents just to save tokens.',
 ].join('\n')
-
-const runningCounts = (list: readonly ModelRouterTask[]) => {
-  const running = list.filter(t => t.status === 'running')
-  const n = (m: ModelRouterLevel) => running.filter(t => t.model === m).length
-  return { haiku: n('haiku'), sonnet: n('sonnet'), opus: n('opus') }
-}
 
 const fileId = (id: string) => id.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 64)
 
@@ -231,8 +223,8 @@ function startTick($: EngineInterface) {
 let seq = 0
 
 async function refreshStatus($: EngineInterface) {
-  const [list, lims, enabled, config] = await Promise.all([read($, tasks), read($, limits), read($, isEnabled), read($, prefs)])
-  $.ui.status(statusText(runningCounts(list), lims, enabled, config))
+  const [lims, enabled, config] = await Promise.all([read($, limits), read($, isEnabled), read($, prefs)])
+  $.ui.status(statusText(lims, enabled, config))
 }
 
 export const register: Register = on => {
@@ -284,7 +276,6 @@ export const register: Register = on => {
       return { text: `Umbrales: aviso ${command.warn} %, crítico ${command.critical} %.` }
     }
     if (command.kind === 'usage') {
-      await update($, tab, () => 'consumo' as const)
       await $.ui.open({ id: PANE, title: 'Model router' }).catch(() => {})
       return { text: await usageText($) }
     }
@@ -294,7 +285,6 @@ export const register: Register = on => {
   }).catch(() => ({ text: 'model-router: error interno, inténtalo de nuevo.' }))
 
   on('command.run', { command: 'quota' }, async ($) => {
-    await update($, tab, () => 'consumo' as const)
     await $.ui.open({ id: PANE, title: 'Model router' }).catch(() => {})
     return { text: await usageText($) }
   }).catch(() => ({ text: 'quota: error interno, inténtalo de nuevo.' }))
@@ -408,14 +398,12 @@ export const register: Register = on => {
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     startTick($)
     const els = $.ui.resolve(e)
-    const [enabled, view, c, list, config] = await Promise.all([
+    const [enabled, c, list, config] = await Promise.all([
       read($, isEnabled),
-      read($, tab),
       collect($),
       read($, tasks),
       read($, prefs),
     ])
-    const tabId: TabId = view === 'tareas' || view === 'consumo' ? view : 'resumen'
     const rows = e.viewport?.rows ?? 30
     const scroll = e.props.scroll as { bodyRows?: number } | undefined
     const refresh = () => {
@@ -428,12 +416,7 @@ export const register: Register = on => {
         enabled,
         tasks: list,
         limits: c.limits,
-        sess: c.sess,
         agg: c.agg,
-        ownId: c.ownId,
-        cost: c.cost,
-        ctx: c.ctx,
-        models: c.models,
         prefs: config,
         route: routeNote(c.limits, config),
       },
@@ -441,12 +424,6 @@ export const register: Register = on => {
         surface: e.surface,
         cols: Math.max(24, e.props.bodyColumns),
         bodyRows: scroll?.bodyRows ?? Math.max(8, rows - 6),
-        tab: tabId,
-        onTab: t => {
-          void update($, tab, () => t)
-            .then(refresh)
-            .catch(() => {})
-        },
         onToggle: () => {
           void update($, isEnabled, v => !v)
             .then(() => refreshStatus($))

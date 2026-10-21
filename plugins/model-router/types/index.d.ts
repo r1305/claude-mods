@@ -86,7 +86,6 @@ declare module 'claude-code' {
       tasks: ModelRouterTask[]
       isEnabled: boolean
       isPaneShown: boolean
-      tab: 'resumen' | 'tareas' | 'consumo'
       days: Record<string, ModelRouterDay>
       models: ModelRouterModels
       limits: ModelRouterLimit[]

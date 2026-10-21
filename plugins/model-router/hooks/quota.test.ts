@@ -341,10 +341,9 @@ test('tokens per model: exact names, cache kept, and the sum in the text', async
   expect(text).toContain('Total: entrada 175 · salida 55 · caché lectura 10 · caché escritura 4')
 
   const ui = await $.ui.mount(TALL_PANE)
-  await ui.press({ key: 'tab-consumo' })
   const drawn = JSON.stringify(await ui.drawn())
-  expect(drawn).toContain('modelo-a')
-  expect(drawn).toContain('entrada 125 · salida 25 · caché lectura 0 · caché escritura 4')
+  expect(drawn).toContain('Consumo')
+  expect(drawn).toContain('Hoy ')
 })
 
 test('without readings the text and the pane say Sin dato', async ($, on) => {
@@ -355,6 +354,5 @@ test('without readings the text and the pane say Sin dato', async ($, on) => {
   expect(text).toContain('Ventana semanal: Sin dato')
   expect(text).toContain('Sin dato: aún no hay turnos completados en esta sesión.')
   const ui = await $.ui.mount(TALL_PANE)
-  await ui.press({ key: 'tab-resumen' })
   expect(JSON.stringify(await ui.drawn())).toContain('Ventana de 5 h: Sin dato')
 })

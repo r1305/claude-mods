@@ -21,11 +21,6 @@ const textOf = (n: unknown): string => {
   return ''
 }
 
-const tareasText = async (ui: { press: (t: { key: string }) => Promise<unknown>; drawn: () => Promise<unknown> }) => {
-  await ui.press({ key: 'tab-tareas' })
-  return textOf(await ui.drawn())
-}
-
 const LONG_CONCURRENCY = `Revisa el flujo de reservas: dos usuarios reservan el mismo horario a la vez. ${'Contexto: transacciones, locks de fila, concurrencia en MySQL, pool compartido. '.repeat(12)}`
 
 const spawnInput = (over: Record<string, unknown>) =>
@@ -100,7 +95,7 @@ test('named agents are routed with their base and floor', async ($, on) => {
   await $.agent.spawn(spawnInput({ subagentType: 'some-plugin:writer', description: 'Cambiar color', prompt: 'cambia el color del boton en css' }))
   expect(seen.model).toBe('sonnet')
   const ui = await $.ui.mount(PANE)
-  expect(await tareasText(ui)).toMatch(/Cambiar color.*\(auto\)/)
+  expect(textOf(await ui.drawn())).toMatch(/Modelos en curso.*Sonnet \d/)
 })
 
 test('usage limits lower the routed model', async ($, on) => {
@@ -147,19 +142,18 @@ test('background spawn stays running until its turn.complete', async ($, on) => 
   const seen: { model?: unknown } = {}
   engineSpawn(on, seen, { status: 'async_launched' })
   await $.agent.spawn(spawnInput({ background: true }))
-  expect(statuses[statuses.length - 1]).toBe('Router ● · 1 en curso')
+  expect(statuses[statuses.length - 1]).toBe('Router ●')
   const ui = await $.ui.mount(PANE)
-  expect(await tareasText(ui)).toMatch(/1 en curso.*0 hechas.*0 con error/)
+  expect(textOf(await ui.drawn())).toContain('Modelos en curso')
 
   const out = await $.turn.complete(complete('agent_1', 'answer'))
   expect(out.text).toBe('ok')
   expect(statuses[statuses.length - 1]).toBe('Router ●')
-  expect(textOf(await ui.drawn())).toMatch(/0 en curso.*1 hecha\b.*0 con error/)
-  expect(textOf(await ui.drawn())).toMatch(/Buscar archivos.*\(auto\)/)
+  expect(textOf(await ui.drawn())).not.toContain('Modelos en curso')
 
   await $.turn.complete(complete('agent_1', 'answer'))
   await $.turn.complete(complete('other', 'answer'))
-  expect(textOf(await ui.drawn())).toMatch(/0 en curso.*1 hecha\b.*0 con error/)
+  expect(textOf(await ui.drawn())).not.toContain('Modelos en curso')
 })
 
 test('turn.complete with error marks the task error', async ($, on) => {
@@ -169,7 +163,7 @@ test('turn.complete with error marks the task error', async ($, on) => {
   await $.agent.spawn(spawnInput({}))
   await $.turn.complete(complete('agent_1', 'error'))
   const ui = await $.ui.mount(PANE)
-  expect(await tareasText(ui)).toMatch(/0 en curso.*0 hechas.*1 con error/)
+  expect(textOf(await ui.drawn())).not.toContain('Modelos en curso')
 })
 
 test('denied spawn is recorded as error', async ($, on) => {
@@ -178,7 +172,7 @@ test('denied spawn is recorded as error', async ($, on) => {
   const r = await $.agent.spawn(spawnInput({}))
   expect(r.deny).toBe('nope')
   const ui = await $.ui.mount(PANE)
-  expect(await tareasText(ui)).toMatch(/0 en curso.*0 hechas.*1 con error/)
+  expect(textOf(await ui.drawn())).not.toContain('Modelos en curso')
 })
 
 test('routing off does not rewrite', async ($, on) => {

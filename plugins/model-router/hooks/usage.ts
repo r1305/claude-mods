@@ -398,16 +398,13 @@ export const spark = (values: readonly number[]) => {
   return values.map(v => (v <= 0 ? '_' : (SPARK[clamp(Math.ceil((v / max) * 8) - 1, 0, 7)] ?? '▁')))
 }
 
-/** Status line: `Router ● · 2 en curso · 5h 34%`; the router mark is ○ when paused. */
+/** Status line: `Router ● · 5h 34%`; the router mark is ○ when paused. Running agents are savvy-progress's to show. */
 export const statusText = (
-  running: Record<ModelRouterLevel, number>,
   limits: readonly ModelRouterLimit[],
   enabled = true,
   th: Thresholds = DEFAULT_PREFS,
 ) => {
   const parts: string[] = [enabled ? 'Router ●' : 'Router ○ pausado']
-  const n = running.haiku + running.sonnet + running.opus
-  if (n > 0) parts.push(`${n} en curso`)
   const five = findLimit(limits, 'five_hour')
   if (five) {
     const p = Math.round(five.percentUsed)

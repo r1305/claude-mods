@@ -138,13 +138,10 @@ test('percent, bar and threshold colors', () => {
 })
 
 test('status text with and without limits', () => {
-  const none = { haiku: 0, sonnet: 0, opus: 0 }
-  expect(statusText(none, [])).toBe('Router ●')
-  expect(statusText({ haiku: 1, sonnet: 1, opus: 0 }, [])).toBe('Router ● · 2 en curso')
-  expect(statusText({ haiku: 1, sonnet: 1, opus: 0 }, [{ kind: 'five_hour', percentUsed: 34.4 }])).toBe('Router ● · 2 en curso · 5h 34%')
-  expect(statusText(none, [{ kind: 'five_hour', percentUsed: 34.4 }])).toBe('Router ● · 5h 34%')
-  expect(statusText(none, [{ kind: 'five_hour', percentUsed: 82 }])).toBe('Router ● · 5h 82% (alto)')
-  expect(statusText(none, [{ kind: 'five_hour', percentUsed: 96 }], false)).toBe('Router ○ pausado · 5h 96% (casi agotado)')
+  expect(statusText([])).toBe('Router ●')
+  expect(statusText([{ kind: 'five_hour', percentUsed: 34.4 }])).toBe('Router ● · 5h 34%')
+  expect(statusText([{ kind: 'five_hour', percentUsed: 82 }])).toBe('Router ● · 5h 82% (alto)')
+  expect(statusText([{ kind: 'five_hour', percentUsed: 96 }], false)).toBe('Router ○ pausado · 5h 96% (casi agotado)')
 })
 
 test('usage file parser rejects junk and sanitizes numbers', () => {
@@ -201,17 +198,11 @@ test('usage panel with rateLimits, multi-session files and the usage command', a
 
   const ui = await $.ui.mount(PANE)
   const text = linesOf(await ui.drawn()).join('\n')
-  expect(text).toContain('Por sesión')
-  expect(text).toContain('HOY')
-  expect(text).toContain('3,5 k')
-  expect(text).toContain('4,5 k')
-  expect(text).toContain('proyecto-b')
-  expect(text).toContain('proyecto-a')
-  await ui.press({ key: 'tab-resumen' })
-  const home = linesOf(await ui.drawn()).join('\n')
-  expect(home).toMatch(/Ventana de 5 h .*34 %.*se reinicia en 2 h 10 min/)
-  expect(home).toMatch(/Ventana semanal .*85 %/)
-  expect(home).not.toContain('Sin datos de límites')
+  expect(text).toContain('Consumo')
+  expect(text).toMatch(/Hoy .*3,5 k tokens.*7 días .*4,5 k tokens/)
+  expect(text).toMatch(/Ventana de 5 h .*34 %.*se reinicia en 2 h 10 min/)
+  expect(text).toMatch(/Ventana semanal .*85 %/)
+  expect(text).not.toContain('Sin datos')
 })
 
 test('usage panel without rateLimits says there is no data', async ($, on) => {
@@ -223,7 +214,7 @@ test('usage panel without rateLimits says there is no data', async ($, on) => {
   expect(out.text).toContain('Ventana semanal: Sin dato')
   const ui = await $.ui.mount(PANE)
   const text = linesOf(await ui.drawn()).join('\n')
-  expect(text).toContain('Sin datos de límites')
+  expect(text).toContain('Sin datos: los límites aparecen')
 })
 
 test('session.measure feeds the status line with the 5h window', async ($, on) => {

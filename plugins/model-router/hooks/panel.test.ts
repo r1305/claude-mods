@@ -3,8 +3,7 @@ import type { On } from 'claude-code'
 import type { Engine } from 'claude-code/testing'
 
 import type { ModelRouterDay } from '../types'
-import { lastDayKeys, stackCells } from './usage'
-import { narrowWidth } from './view'
+import { lastDayKeys } from './usage'
 
 const NOW = new Date(2026, 9, 12, 12, 0, 0).getTime()
 
@@ -160,7 +159,7 @@ async function seedTasks($: Engine) {
   await $.turn.complete(complete(undefined, 800, 'claude-sonnet-4-5'))
 }
 
-test('resumen with data answers: how am I doing, what runs, which model spends', async ($, on) => {
+test('resumen with data: how am I doing, which model runs, today vs 7 days', async ($, on) => {
   world(on, { limits: LIMITS_OK, files: seedFiles() })
   await begin($)
   await seedTasks($)
@@ -172,15 +171,16 @@ test('resumen with data answers: how am I doing, what runs, which model spends',
   expect(text).toMatch(/Ventana de 5 h .*34 %.*se reinicia en 2 h 10 min/)
   expect(text).toMatch(/Semana .*41 %/)
   expect(text).not.toContain('Pasa a modelos más baratos')
-  expect(text).toContain('Ahora mismo')
-  expect(text).toContain('2 tareas en curso')
-  expect(text).toMatch(/Sonnet .*Agregar endpoint de reservas/)
-  expect(text).toContain('Reparto por modelo (esta sesión)')
-  expect(text).toMatch(/Opus 67 %/)
-  expect(text).toContain('Modelos económicos (Haiku y Sonnet)')
-  expect(text).toContain('▸ 1 Resumen')
-  expect(text).toContain('2 Tareas')
-  expect(text).toContain('Los % de límites son los oficiales')
+  expect(text).toContain('Modelos en curso')
+  expect(text).toMatch(/Opus 1/)
+  expect(text).toMatch(/Sonnet 1/)
+  expect(text).not.toMatch(/Haiku 1/)
+  expect(text).toContain('Consumo')
+  expect(text).toMatch(/Hoy .*7 días/)
+  expect(text).toContain('Detalle de consumo: /quota')
+  for (const gone of ['Tareas', 'Historial reciente', 'Reparto por modelo', 'Por sesión', 'Esta sesión', 'Costo estimado', 'Ahora mismo', 'Los % de límites son los oficiales']) {
+    expect(text).not.toContain(gone)
+  }
   expect(text).not.toContain('~0')
 })
 
@@ -205,15 +205,14 @@ test('resumen with limits almost exhausted', async ($, on) => {
   expect(text).toContain('Pasa a modelos más baratos')
 })
 
-test('resumen without limits and without tasks shows friendly empty states', async ($, on) => {
+test('resumen without limits and without tasks shows friendly empty states and no running block', async ($, on) => {
   world(on)
   await begin($)
   const ui = await $.ui.mount(pane())
   const text = await textOfPane(ui)
   expect(text).toContain('Sin datos de límites')
   expect(text).toContain('Sin datos: los límites aparecen con una suscripción de Claude.')
-  expect(text).toContain('Nada en curso.')
-  expect(text).toContain('Aún no hay consumo en esta sesión.')
+  expect(text).not.toContain('Modelos en curso')
 })
 
 test('narrow viewport uses the compact one-line layout and never overflows', async ($, on) => {
@@ -226,84 +225,35 @@ test('narrow viewport uses the compact one-line layout and never overflows', asy
   expect(lines.filter(l => l.length > 40)).toEqual([])
 })
 
-test('low viewport keeps header, limits and running and points to the other tabs', async ($, on) => {
+test('low viewport keeps header and limits and points to a bigger panel', async ($, on) => {
   world(on, { limits: LIMITS_OK, files: seedFiles() })
   await begin($)
   await seedTasks($)
-  const ui = await $.ui.mount(pane({ bodyRows: 16 }))
+  const ui = await $.ui.mount(pane({ bodyRows: 7 }))
   const text = await textOfPane(ui)
   expect(text).toContain('Router ● Activo')
   expect(text).toContain('Límites de tu plan')
-  expect(text).toContain('Ahora mismo')
-  expect(text).not.toContain('Reparto por modelo')
-  expect(text).toContain('… más detalle en las pestañas Tareas (2) y Consumo (3)')
+  expect(text).not.toContain('Consumo')
+  expect(text).toContain('… amplía el panel para ver el resto')
 })
 
-test('emoji surfaces draw emoji, terminal does not', async ($, on) => {
+test('desktop surface draws emoji and animated SVG meters when the engine offers Svg; terminal does not', async ($, on) => {
   world(on, { limits: LIMITS_OK })
   await begin($)
   await $.agent.spawn(spawn('Buscar archivos de login'))
-  const desktop = await textOfPane(await $.ui.mount(pane({ surface: 'desktop' })))
-  expect(desktop).toContain('🟢')
-  expect(desktop).toContain('Haiku')
+  const desktop = await $.ui.mount(pane({ surface: 'desktop' }))
+  const dText = await textOfPane(desktop)
+  expect(dText).toMatch(/[🟢🟡🔴⚪]/u)
+  const dJson = JSON.stringify(await desktop.drawn())
+  expect(dJson).toContain('Haiku')
+  if (dJson.includes('<svg')) {
+    expect(dJson).toContain('prefers-reduced-motion')
+    expect(dJson).toContain('prefers-color-scheme: dark')
+    expect(dJson).toContain('class=\\"live')
+  }
   const term = await textOfPane(await $.ui.mount(pane()))
   expect(term).not.toMatch(/[🟢🔵🟣⏳✅❌]/u)
-})
-
-test('tareas tab lists what runs and the history', async ($, on) => {
-  world(on, { limits: LIMITS_OK })
-  await begin($)
-  await seedTasks($)
-  const ui = await $.ui.mount(pane())
-  await ui.press({ key: 'tab-tareas' })
-  const text = await textOfPane(ui)
-  expect(text).toContain('▸ 2 Tareas')
-  expect(text).toContain('Resumen de tareas')
-  expect(text).toMatch(/2 en curso/)
-  expect(text).toMatch(/1 hecha\b/)
-  expect(text).toContain('En curso')
-  expect(text).toContain('Historial reciente')
-  expect(text).toMatch(/✓ ● Haiku .*Buscar archivos de login.*\(auto\)/)
-})
-
-test('tareas tab empty state', async ($, on) => {
-  world(on)
-  await begin($)
-  const ui = await $.ui.mount(pane())
-  await ui.press({ key: 'tab-tareas' })
-  const text = await textOfPane(ui)
-  expect(text).toContain('Todavía no se lanzó ninguna tarea.')
-})
-
-test('consumo tab: today vs 7 days, weekday chart, per-session with the current one marked', async ($, on) => {
-  world(on, { limits: LIMITS_OK, files: seedFiles() })
-  await begin($)
-  await seedTasks($)
-  const ui = await $.ui.mount(pane())
-  await ui.press({ key: 'tab-consumo' })
-  const text = await textOfPane(ui)
-  expect(text).toContain('▸ 3 Consumo')
-  expect(text).toContain('HOY')
-  expect(text).toContain('ÚLTIMOS 7 DÍAS')
-  expect(text).toMatch(/Hoy\s+[█░]+ /)
-  expect(text).toMatch(/\b(Lun|Mar|Mié|Jue|Vie|Sáb|Dom)\b/)
-  expect(text).toContain('Reparto por modelo (7 días)')
-  expect(text).toContain('Por sesión')
-  expect(text).toMatch(/▸ proyecto-a .*← esta/)
-  expect(text).toContain('proyecto-b')
-  expect(text).toContain('Esta sesión')
-  expect(text).toContain('Costo estimado: $1,50')
-  expect(text).toMatch(/Contexto .*40 %/)
-})
-
-test('consumo tab with little room falls back to a sparkline', async ($, on) => {
-  world(on, { limits: LIMITS_OK, files: seedFiles() })
-  await begin($)
-  const ui = await $.ui.mount(pane({ bodyRows: 17 }))
-  await ui.press({ key: 'tab-consumo' })
-  const text = await textOfPane(ui)
-  expect(text).toMatch(/[▁▂▃▄▅▆▇█_]/)
-  expect(text).toContain('Hoy')
+  expect(JSON.stringify(await (await $.ui.mount(pane())).drawn())).not.toContain('<svg')
 })
 
 test('pause button flips the router state in the header and the status line', async ($, on) => {
@@ -346,23 +296,18 @@ test('session.start survives a failing command registration and pane open', asyn
 })
 
 for (const cols of [30, 40, 45]) {
-  test(`compact resumen at ${cols} columns: one line per element, bar sums to width`, async ($, on) => {
+  test(`compact resumen at ${cols} columns: one line per element`, async ($, on) => {
     world(on, { limits: LIMITS_OK, files: seedFiles() })
     await begin($)
     await seedTasks($)
     const ui = await $.ui.mount(pane({ cols, rows: 50 }))
     const lines = linesOf(await ui.drawn())
     expect(lines.filter(l => l.length > cols)).toEqual([])
-    const W = narrowWidth(cols)
-    const bars = lines.filter(l => /^█+$/.test(l))
-    expect(bars).toHaveLength(1)
-    expect((bars[0] ?? '').length).toBe(W)
-    expect(stackCells([1200, 800, 4000, 0], W).reduce((s, c) => s + c, 0)).toBe(W)
-    const legend = lines.filter(l => /^H \d+% · /.test(l))
-    expect(legend).toHaveLength(1)
-    expect(legend[0]).toMatch(/^H \d+% · S \d+% · O \d+%$/)
     expect(lines).toContain('● Vas bien')
+    expect(lines.some(l => /^En curso · 2/.test(l))).toBe(true)
+    expect(lines).toContain('Opus 1 · Sonnet 1')
     expect(lines.some(l => /^Hoy \d+(,\d)?k? · 7d \d+(,\d)?k?$/.test(l))).toBe(true)
+    expect(lines.some(l => l.startsWith('Reparto'))).toBe(false)
   })
 }
 
@@ -370,58 +315,11 @@ test('compact resumen with little height omits whole sections and hints it', asy
   world(on, { limits: LIMITS_OK, files: seedFiles() })
   await begin($)
   await seedTasks($)
-  const ui = await $.ui.mount(pane({ cols: 35, rows: 40, bodyRows: 12 }))
+  const ui = await $.ui.mount(pane({ cols: 35, rows: 40, bodyRows: 7 }))
   const lines = linesOf(await ui.drawn())
   expect(lines).toContain('● Vas bien')
   expect(lines.some(l => l.startsWith('Límites'))).toBe(true)
-  expect(lines.some(l => l.startsWith('Reparto'))).toBe(false)
+  expect(lines.some(l => l.startsWith('Consumo'))).toBe(false)
   expect(lines.some(l => l.startsWith('… omitido:'))).toBe(true)
   expect(lines.filter(l => l.length > 35)).toEqual([])
-})
-
-type Node = { type?: string; props?: Record<string, unknown>; children?: unknown }
-const kidsOf = (n: Node): Node[] => {
-  const c = n.children ?? n.props?.children
-  return (Array.isArray(c) ? c : [c]).filter((x): x is Node => !!x && typeof x === 'object')
-}
-const segmentsOf = (root: unknown): { width: string; grow: unknown; color: unknown; text: string }[] => {
-  const out: { width: string; grow: unknown; color: unknown; text: string }[] = []
-  const walk = (n: Node) => {
-    if (n.type === 'Box' && typeof n.props?.width === 'string' && n.props.width.endsWith('%') && n.props.height === 1 && n.props.backgroundColor !== undefined) {
-      out.push({ width: n.props.width, grow: n.props.flexGrow, color: n.props.backgroundColor, text: textOf(n) })
-      return
-    }
-    kidsOf(n).forEach(walk)
-  }
-  ;[root as Node].forEach(walk)
-  return out
-}
-
-test('desktop surface: the stacked split is a row of boxes, one per model, not a line of █', async ($, on) => {
-  world(on, { limits: LIMITS_OK, files: seedFiles() })
-  await begin($)
-  await seedTasks($)
-  const ui = await $.ui.mount(pane({ surface: 'desktop' }))
-  const tree = await ui.drawn()
-  expect(linesOf(tree).some(l => /^█+$/.test(l))).toBe(false)
-  const segs = segmentsOf(tree)
-  expect(segs.map(s => s.color)).toEqual(['green', 'blue', 'magenta'])
-  expect(segs.reduce((s, x) => s + Number.parseInt(x.width, 10), 0)).toBe(100)
-  expect(segs.every(s => s.width.endsWith('%'))).toBe(true)
-  expect(segs.every(s => s.text === '')).toBe(true)
-  expect(segs.slice(0, -1).every(s => s.grow === 0 || s.grow === undefined)).toBe(true)
-  expect(segs[segs.length - 1]?.grow).toBe(1)
-  expect(JSON.stringify(tree)).not.toMatch(/…/)
-  await ui.press({ key: 'tab-consumo' })
-  expect(segmentsOf(await ui.drawn()).map(s => s.color)).toEqual(['green', 'blue', 'magenta'])
-})
-
-test('terminal surface keeps the character bar', async ($, on) => {
-  world(on, { limits: LIMITS_OK, files: seedFiles() })
-  await begin($)
-  await seedTasks($)
-  const ui = await $.ui.mount(pane())
-  const tree = await ui.drawn()
-  expect(segmentsOf(tree)).toEqual([])
-  expect(linesOf(tree).some(l => l.includes('█'))).toBe(true)
 })
