@@ -20,6 +20,10 @@ export type ModelRouterTask = {
   durationMs?: number
   /** summed from the subagent's turn.complete usage */
   tokens?: number
+  /** effort the subagent runs at, from its turn.step (low, medium, high, xhigh, max) */
+  effort?: string
+  /** sequence number of the user turn that spawned it (turn.start); progress counts per turn */
+  run?: number
 }
 
 export type ModelRouterBucket = ModelRouterLevel | 'other'
@@ -93,6 +97,8 @@ declare module 'claude-code' {
       context: ModelRouterContext | null
       prefs: ModelRouterPrefs
       memories: ModelRouterAlertMemories
+      runSeq: number
+      effort: string | null
     }
   }
 }

@@ -3,6 +3,7 @@ import type { AgentSpawnResult, EngineInterface, Register, Timer } from 'claude-
 
 import type { ModelRouterAlertMemories, ModelRouterLevel, ModelRouterLimit, ModelRouterModels, ModelRouterPrefs, ModelRouterTask, ModelRouterUsageFile } from '../types'
 import { DEFAULT_PREFS, PREFS_KEY, WINDOWS, addUsage, alertText, emptyMemories, evaluateAlerts, parseCommand, parsePrefs, windowsOf } from './quota'
+import { progressOf } from './progress'
 import { route, routeNote } from './route'
 import {
   FLUSH_MS,
@@ -18,7 +19,8 @@ import {
   trimDays,
 } from './usage'
 import type { SessionFile } from './usage'
-import { renderPanel } from './view'
+import { renderPanel, renderProgressBar } from './view'
+import type { El } from './view'
 
 const PANE = 'model-router'
 const MAX_TASKS = 200
@@ -46,6 +48,10 @@ const cost = atom({ plugin: 'model-router', key: 'cost' } as const, null as numb
 const context = atom({ plugin: 'model-router', key: 'context' } as const, null as { percent?: number; tokens?: number; window: number } | null)
 const prefs = atom({ plugin: 'model-router', key: 'prefs' } as const, DEFAULT_PREFS as ModelRouterPrefs)
 const memories = atom({ plugin: 'model-router', key: 'memories' } as const, emptyMemories() as ModelRouterAlertMemories)
+// Sequence of the user turns: each subagent is stamped with the one that spawned it.
+const runSeq = atom({ plugin: 'model-router', key: 'runSeq' } as const, 0)
+// Effort the main session runs at, from its last turn.step.
+const effort = atom({ plugin: 'model-router', key: 'effort' } as const, null as string | null)
 
 const POLICY = [
   'Model routing: the model-router mod is a middleware for every Agent tool call (all agent types except forks and workflow agents).',
@@ -302,7 +308,7 @@ export const register: Register = on => {
   }).catch(($, e, next) => next(e))
 
   on('agent.spawn', async ($, e, next) => {
-    const [enabled, lims, config] = await Promise.all([read($, isEnabled), read($, limits), read($, prefs)])
+    const [enabled, lims, config, run] = await Promise.all([read($, isEnabled), read($, limits), read($, prefs), read($, runSeq)])
     const isRouted = enabled && !e.fork && !e.workflow
     const decision = isRouted ? route(e.subagentType ?? '', e.description ?? '', e.prompt ?? '', lims, e.model, config) : undefined
     const chosen = decision?.model
@@ -327,6 +333,7 @@ export const register: Register = on => {
             ...(decision ? { reason: decision.reason } : {}),
             status: failed ? 'error' : 'running',
             startedAt,
+            run,
           }
           await update($, tasks, list => [...list.filter(t => t.id !== id), task].slice(-MAX_TASKS))
           await refreshStatus($)
@@ -334,6 +341,27 @@ export const register: Register = on => {
       } catch {}
     }
   }).catch(($, e, next) => next(e))
+
+  on('turn.start', async ($, e, next) => {
+    if (e.agentId === undefined) await update($, runSeq, n => n + 1).catch(() => undefined)
+    return next(e)
+  }).catch(($, e, next) => next(e))
+
+  on('turn.step', async function* ($, e, next) {
+    const result = yield* next(e)
+    const level = e.effort
+    if (typeof level === 'string') {
+      try {
+        if (e.agentId === undefined) {
+          await update($, effort, () => level)
+        } else {
+          const agentId = e.agentId
+          await update($, tasks, list => list.map(t => (t.id === agentId && t.effort !== level ? { ...t, effort: level } : t)))
+        }
+      } catch {}
+    }
+    return result
+  })
 
   on('turn.complete', async ($, e, next) => {
     const u = e.usage
@@ -395,14 +423,26 @@ export const register: Register = on => {
     return next(e)
   }).catch(($, e, next) => next(e))
 
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    const [run, list, level] = await Promise.all([read($, runSeq), read($, tasks), read($, effort)])
+    const progress = progressOf(list, run)
+    if (progress === null || e.props.hasSurvey) return next(e)
+    // Other mods' bands drawn beneath this bar; Claude Code's own placeholder is never nested.
+    const drawn = await Promise.resolve(next(e)).catch(() => null)
+    const below = drawn && typeof drawn === 'object' && (drawn as { type?: string }).type !== 'engine' ? (drawn as El) : null
+    return renderProgressBar($.ui.resolve(e), { surface: e.surface, cols: e.props.bodyColumns, progress, effort: level, below })
+  }).catch(($, e, next) => next(e))
+
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     startTick($)
     const els = $.ui.resolve(e)
-    const [enabled, c, list, config] = await Promise.all([
+    const [enabled, c, list, config, run, level] = await Promise.all([
       read($, isEnabled),
       collect($),
       read($, tasks),
       read($, prefs),
+      read($, runSeq),
+      read($, effort),
     ])
     const rows = e.viewport?.rows ?? 30
     const scroll = e.props.scroll as { bodyRows?: number } | undefined
@@ -419,6 +459,8 @@ export const register: Register = on => {
         agg: c.agg,
         prefs: config,
         route: routeNote(c.limits, config),
+        progress: progressOf(list, run),
+        effort: level,
       },
       {
         surface: e.surface,

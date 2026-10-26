@@ -24,6 +24,7 @@ import {
   planLimits,
 } from './usage'
 import type { Aggregate } from './usage'
+import type { RunProgress } from './progress'
 
 export type Els = ReturnType<EngineInterface['ui']['resolve']>
 
@@ -35,6 +36,10 @@ export type PanelData = {
   agg: Aggregate
   prefs: ModelRouterPrefs
   route?: { text: string; level: 'none' | 'ok' | 'high' | 'critical' }
+  /** progress of the current task (its subagents), null when the turn spawned none */
+  progress: RunProgress | null
+  /** effort the main session runs at, from its turn.step */
+  effort: string | null
 }
 
 export type PanelOpts = {
@@ -47,7 +52,7 @@ export type PanelOpts = {
 
 type Style = { color?: string; bold?: boolean; dimColor?: boolean; inverse?: boolean }
 type Seg = string | [string, Style]
-type El = JSX.Element
+export type El = JSX.Element
 type Row = { el: El; h: number }
 type Built = { title: Seg[]; body: Row[] }
 type Block = { id: string; partial?: boolean; build: (inner: number, cap: number) => Built | undefined }
@@ -296,7 +301,35 @@ export function renderPanel(els: Els, d: PanelData, o: PanelOpts): El {
     }),
   }
 
-  const blocks: Block[] = [limitsBlock, ...(isLive ? [modelsBlock] : []), usageBlock]
+  const prog = d.progress
+  const effortTxt = `esfuerzo ${d.effort ?? '—'}`
+  const taskBlock: Block | undefined =
+    prog === null
+      ? undefined
+      : {
+          id: 'tarea',
+          build: inner => {
+            const label = `Tarea ${prog.done}/${prog.total}`
+            const row: Row =
+              Svg !== null
+                ? {
+                    h: SVG_METER_ROWS,
+                    el: (
+                      <Svg
+                        key="tarea"
+                        source={meterSvg(svgWidth(inner), label, prog.pct, effortTxt, 'normal', prog.running > 0)}
+                        alt={`${label}, ${fmtPct(prog.pct)}, ${effortTxt}`}
+                        width={svgWidth(inner)}
+                        height={SVG_METER_H}
+                      />
+                    ),
+                  }
+                : meter('tarea', label, prog.pct, effortTxt, inner)
+            return { title: [['Tarea en curso', BOLD]], body: [row] }
+          },
+        }
+
+  const blocks: Block[] = [...(taskBlock ? [taskBlock] : []), limitsBlock, ...(isLive ? [modelsBlock] : []), usageBlock]
 
   const footH = isNarrow ? 2 : 1
   const avail = Math.max(1, o.bodyRows - 2 - footH)
@@ -390,6 +423,18 @@ export function renderPanel(els: Els, d: PanelData, o: PanelOpts): El {
     if (high >= d.prefs.warn) rows.push(L('cl-help', [['→ Usa modelos más baratos', { bold: true, color: levelColor(high, d.prefs) }]]))
     return { id: 'c-lim', name: 'límites', title: 'Límites', rows, partial: true }
   }
+  const cTask = (): CBlock => {
+    const label = prog !== null ? `${prog.done}/${prog.total}` : ''
+    return {
+      id: 'c-task',
+      name: 'tarea',
+      title: 'Tarea en curso',
+      rows: [
+        L('ct', [[`${label} `, BOLD], [bar(prog?.pct ?? 0, clamp(W - 16, 4, 30)), { color: 'green' }], [` ${fmtPct(prog?.pct ?? 0)}`, BOLD]]),
+        L('ce', [[effortTxt, DIM]]),
+      ],
+    }
+  }
   const cModels = (): CBlock => {
     const full = runCounts.map(x => `${MODEL_NAME[x.b]} ${x.n}`).join(' · ')
     const text = full.length <= W ? full : runCounts.map(x => `${MODEL_LETTER[x.b]} ${x.n}`).join(' · ')
@@ -405,7 +450,7 @@ export function renderPanel(els: Els, d: PanelData, o: PanelOpts): El {
     const nodes: El[] = []
     const dropped: string[] = []
     let used = 0
-    for (const b of [cLimits(), ...(isLive ? [cModels()] : []), cUse()]) {
+    for (const b of [...(prog !== null ? [cTask()] : []), cLimits(), ...(isLive ? [cModels()] : []), cUse()]) {
       const left = room - used - 1
       const rows = left >= 1 ? takeRows(b.rows, left) : []
       if (rows.length === 0 || (rows.length < b.rows.length && !b.partial)) {
@@ -478,6 +523,46 @@ export function renderPanel(els: Els, d: PanelData, o: PanelOpts): El {
           </Text>
         )}
       </Box>
+    </Box>
+  )
+}
+
+export type ProgressOpts = { surface: string | undefined; cols: number; progress: RunProgress; effort: string | null; below: El | null }
+
+/**
+ * The bar above the prompt: the current task's progress, advancing as its subagents finish.
+ * `below` is the row the other mods drew, kept beneath it.
+ */
+export function renderProgressBar(els: Els, o: ProgressOpts): El {
+  const { Box, Text } = els
+  const Svg = o.surface === 'desktop' && 'Svg' in els ? els.Svg : null
+  const p = o.progress
+  const label = `Tarea ${p.done}/${p.total}`
+  const effortTxt = `esfuerzo ${o.effort ?? '—'}`
+  if (Svg !== null) {
+    const width = Math.max(180, Math.min(1600, o.cols * 8 - 96))
+    return (
+      <Box flexDirection="column">
+        <Svg
+          source={meterSvg(width, label, p.pct, effortTxt, 'normal', p.running > 0)}
+          alt={`${label}, ${fmtPct(p.pct)}, ${effortTxt}`}
+          width={width}
+          height={SVG_METER_H}
+        />
+        {o.below}
+      </Box>
+    )
+  }
+  const width = Math.max(6, Math.min(40, o.cols - 48))
+  return (
+    <Box flexDirection="column">
+      <Box flexDirection="row" gap={2}>
+        <Text bold>{label}</Text>
+        <Text color="green">{bar(p.pct, width)}</Text>
+        <Text bold>{fmtPct(p.pct)}</Text>
+        <Text dimColor>{effortTxt}</Text>
+      </Box>
+      {o.below}
     </Box>
   )
 }
