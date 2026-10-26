@@ -54,8 +54,6 @@ const memories = atom({ plugin: 'model-router', key: 'memories' } as const, empt
 const runSeq = atom({ plugin: 'model-router', key: 'runSeq' } as const, 0)
 // Effort the main session runs at, from its last turn.step.
 const effort = atom({ plugin: 'model-router', key: 'effort' } as const, null as string | null)
-// Model the main session answered with last, from its turn.complete.
-const mainModel = atom({ plugin: 'model-router', key: 'mainModel' } as const, null as string | null)
 
 const POLICY = [
   'Model routing: the model-router mod is a middleware for every Agent tool call (all agent types except forks and workflow agents).',
@@ -402,10 +400,6 @@ export const register: Register = on => {
         const now = await $.clock.now()
         await update($, models, prev => addUsage(prev, u.model ?? '', u))
         await update($, days, d => addTokens(d, now, bucketOf(u.model), total))
-        if (e.agentId === undefined && u.model) {
-          const name = u.model
-          await update($, mainModel, () => name)
-        }
         await flush($, false)
         $.ui.invalidate('ui.render')
       } catch {}
@@ -469,14 +463,13 @@ export const register: Register = on => {
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     startTick($)
     const els = $.ui.resolve(e)
-    const [enabled, c, list, config, run, level, main] = await Promise.all([
+    const [enabled, c, list, config, run, level] = await Promise.all([
       read($, isEnabled),
       collect($),
       read($, tasks),
       read($, prefs),
       read($, runSeq),
       read($, effort),
-      read($, mainModel),
     ])
     const rows = e.viewport?.rows ?? 30
     const scroll = e.props.scroll as { bodyRows?: number } | undefined
@@ -496,7 +489,6 @@ export const register: Register = on => {
         progress: progressOf(list, run),
         effort: level,
         turnTasks: turnTasks(list, run),
-        mainModel: main ? bucketOf(main) : null,
       },
       {
         surface: e.surface,

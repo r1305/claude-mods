@@ -46,8 +46,6 @@ export type PanelData = {
   effort: string | null
   /** subagents of the current user turn, in display order */
   turnTasks: readonly ModelRouterTask[]
-  /** family of the model the main session answered with last, null while unknown */
-  mainModel: ModelRouterBucket | null
 }
 
 export type PanelOpts = {
@@ -209,31 +207,24 @@ const chipsSvg = (W: number, items: { b: ModelRouterBucket; text: string }[]): s
 const SVG_ROW_H = 22
 const STATUS_TXT = { running: 'en curso', done: 'hecha', error: 'error' } as const
 const STATUS_CLS = { running: 'neon', done: 'lv-normal', error: 'lv-critico' } as const
-type RowStatus = ModelRouterTask['status'] | 'main'
+type RowStatus = ModelRouterTask['status']
 
 /**
  * One task row: model glyph, description, and on the right the effort in small type coloured by
- * EFFORT_COLOR, then the status; the main session row names its model instead of a status.
+ * EFFORT_COLOR, then the status.
  */
 const taskRowSvg = (W: number, b: ModelRouterBucket, desc: string, effort: string, status: RowStatus, last = true): string => {
-  const isMain = status === 'main'
-  const st = isMain ? '' : STATUS_TXT[status]
-  const rightLen = (isMain ? MODEL_NAME[b].length + 3 : 0) + effort.length + st.length + 3
-  const x0 = isMain ? 18 : 28
+  const st = STATUS_TXT[status]
+  const rightLen = effort.length + st.length + 3
+  const x0 = 28
   const d = short(desc, Math.max(4, Math.floor((W - x0 - 6 - rightLen * 6.4) / 6.8)))
   const eff = `<tspan font-size="9.5" style="fill:var(--${EFFORT_COLOR[effortTone(effort)].css})">${xml(effort)}</tspan>`
-  const lead = isMain
-    ? modelGlyph(b, 7)
-    : `<path style="color:var(--s);fill:none" d="M7 0V${last ? 11 : SVG_ROW_H}M7 11H14" stroke="currentColor" stroke-opacity=".6" stroke-width="1"/><circle class="m-${b}" cx="19" cy="11" r="2.4" fill="currentColor"/>`
+  const lead = `<path style="color:var(--s);fill:none" d="M7 0V${last ? 11 : SVG_ROW_H}M7 11H14" stroke="currentColor" stroke-opacity=".6" stroke-width="1"/><circle class="m-${b}" cx="19" cy="11" r="2.4" fill="currentColor"/>`
   return svgDoc(
     W,
     SVG_ROW_H,
     `${lead}<text class="t" x="${x0}" y="17" font-family="${FONT}" font-size="12" font-weight="600">${xml(d)}</text>
-<text class="s" x="${W}" y="17" text-anchor="end" font-family="${FONT}" font-size="11">${
-      isMain
-        ? `<tspan class="cf m-${b}" font-weight="700">${MODEL_NAME[b]}</tspan> · ${eff}`
-        : `${eff} · <tspan class="cf ${STATUS_CLS[status]}" font-weight="700">${st}</tspan>`
-    }</text>`,
+<text class="s" x="${W}" y="17" text-anchor="end" font-family="${FONT}" font-size="11">${eff} · <tspan class="cf ${STATUS_CLS[status]}" font-weight="700">${st}</tspan></text>`,
   )
 }
 
@@ -418,15 +409,13 @@ export function renderPanel(els: Els, d: PanelData, o: PanelOpts): El {
     | { kind: 'head'; key: string; b: ModelRouterBucket; n: number }
     | { kind: 'row'; key: string; b: ModelRouterBucket; desc: string; effort: string; status: RowStatus; last: boolean }
   const listItems: ListItem[] = [
-    ...(d.mainModel !== null ? [{ kind: 'row' as const, key: 'main', b: d.mainModel, desc: 'Principal', effort: d.effort ?? '—', status: 'main' as const, last: true }] : []),
     ...groupByModel(d.turnTasks).flatMap((g): ListItem[] => [
       { kind: 'head', key: `g-${g.b}`, b: g.b, n: g.tasks.length },
       ...g.tasks.map((t, i) => ({ kind: 'row' as const, key: t.id, b: g.b, desc: t.description || t.subagentType || 'subagente', effort: t.effort ?? '—', status: t.status, last: i === g.tasks.length - 1 })),
     ]),
   ]
   const branch = (last: boolean) => (last ? '└' : '├')
-  const statusSeg = (s: RowStatus): Seg =>
-    s === 'main' ? ['· ', DIM] : [`${ic[s]} `, { color: s === 'error' ? 'red' : s === 'done' ? 'green' : 'cyan' }]
+  const statusSeg = (s: RowStatus): Seg => [`${ic[s]} `, { color: s === 'error' ? 'red' : s === 'done' ? 'green' : 'cyan' }]
   const effortSeg = (e: string): Seg => [e, { color: EFFORT_COLOR[effortTone(e)].color, dimColor: true }]
   const listBlock: Block = {
     id: 'tareas',
@@ -440,24 +429,21 @@ export function renderPanel(els: Els, d: PanelData, o: PanelOpts): El {
             ? { h: 2, el: <Svg key={`tl-${it.key}`} source={chipsSvg(W, [{ b: it.b, text }])} alt={text} width={W} height={SVG_CHIPS_H} /> }
             : L(`tl-${it.key}`, [dot(it.b), [text, { bold: true, color: MODEL_COLOR[it.b] }]])
         }
-        const isMain = it.status === 'main'
-        const st = isMain ? '' : STATUS_TXT[it.status]
+        const st = STATUS_TXT[it.status]
         if (Svg !== null) {
           return {
             h: 1,
-            el: <Svg key={`tl-${it.key}`} source={taskRowSvg(W, it.b, it.desc, it.effort, it.status, it.last)} alt={`${it.desc} · ${isMain ? `${MODEL_NAME[it.b]} · ` : ''}${it.effort}${st !== '' ? ` · ${st}` : ''}`} width={W} height={SVG_ROW_H} />,
+            el: <Svg key={`tl-${it.key}`} source={taskRowSvg(W, it.b, it.desc, it.effort, it.status, it.last)} alt={`${it.desc} · ${it.effort} · ${st}`} width={W} height={SVG_ROW_H} />,
           }
         }
-        const rightLen = (isMain ? MODEL_NAME[it.b].length + 3 : 0) + it.effort.length + (st !== '' ? st.length + 3 : 0) + 2
+        const rightLen = it.effort.length + st.length + 5
         return L(`tl-${it.key}`, [
-          isMain ? '' : [`${branch(it.last)} `, DIM],
+          [`${branch(it.last)} `, DIM],
           statusSeg(it.status),
-          ...(isMain ? [dot(it.b)] : []),
           short(it.desc, Math.max(4, inner - 7 - rightLen)),
           '  ',
-          ...(isMain ? ([[MODEL_NAME[it.b], { color: MODEL_COLOR[it.b] }], ' · '] as Seg[]) : []),
           effortSeg(it.effort),
-          ...(st !== '' ? ([[` · ${st}`, DIM]] as Seg[]) : []),
+          [` · ${st}`, DIM],
         ])
       })
       if (d.turnTasks.length === 0) rows.push(L('tl-none', [['Sin tareas en este turno', DIM]]))
@@ -572,7 +558,7 @@ export function renderPanel(els: Els, d: PanelData, o: PanelOpts): El {
     rows: [
       ...listItems.map(it => {
         if (it.kind === 'head') return L(`cli-${it.key}`, [[short(`${MODEL_NAME[it.b]} · ${it.n}`, W), { bold: true, color: MODEL_COLOR[it.b] }]])
-        const mark = it.status === 'main' ? `· ${MODEL_LETTER[it.b]} ` : `${branch(it.last)}${ic[it.status]} `
+        const mark = `${branch(it.last)}${ic[it.status]} `
         return L(`cli-${it.key}`, [mark, effortSeg(it.effort), ' ', short(it.desc, W - mark.length - it.effort.length - 1)])
       }),
       ...(d.turnTasks.length === 0 ? [L('cl-none', [[short('Sin tareas en este turno', W), DIM]])] : []),

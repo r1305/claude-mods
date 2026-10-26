@@ -183,7 +183,7 @@ test('resumen with data: how am I doing, which model runs, today vs 7 days', asy
   expect(text).toMatch(/Opus · 1\n└ » Integrar pagos con Stripe +— · en curso/)
   expect(text).toMatch(/Haiku · 1\n└ ✓ Buscar archivos de login +— · hecha/)
   expect(text.indexOf('Opus · 1')).toBeLessThan(text.indexOf('Haiku · 1'))
-  expect(text).toMatch(/Principal +Sonnet · —/)
+  expect(text).not.toContain('Principal')
   expect(JSON.stringify(await ui.drawn())).toContain('"color":"gray","dimColor":true')
   for (const gone of ['Historial reciente', 'Reparto por modelo', 'Por sesión', 'Esta sesión', 'Costo estimado', 'Ahora mismo', 'Los % de límites son los oficiales']) {
     expect(text).not.toContain(gone)
