@@ -1,7 +1,7 @@
 import { test, expect } from 'claude-code/testing'
 
 import type { ModelRouterTask } from '../types'
-import { effortTone, groupByModel, progressOf, turnTasks } from './progress'
+import { effortTone, groupByModel, historyOf, progressOf, turnTasks } from './progress'
 import { modelRows } from './usage'
 
 const task = (id: string, run: number | undefined, status: ModelRouterTask['status'], startedAt = 0): ModelRouterTask => ({
@@ -73,4 +73,10 @@ test('groupByModel: Opus, Sonnet, Haiku order, empty groups dropped, inner order
 
 test('effortTone: low green, medium amber, high/xhigh/max red, unknown gray', () => {
   expect(['low', 'medium', 'high', 'xhigh', 'max', undefined, 'raro'].map(effortTone)).toEqual(['low', 'mid', 'high', 'high', 'high', 'none', 'none'])
+})
+
+test('history: only finished tasks, newest first', () => {
+  const tasks = [task('a', 1, 'done', 1), task('b', 1, 'running', 5), task('c', 1, 'error', 3), task('d', 1, 'done', 2)]
+  expect(historyOf(tasks).map(t => t.id)).toEqual(['c', 'd', 'a'])
+  expect(historyOf([task('x', 1, 'running')])).toEqual([])
 })

@@ -14,6 +14,10 @@ const GROUP_ORDER: ModelRouterLevel[] = ['opus', 'sonnet', 'haiku']
 export const groupByModel = (tasks: readonly ModelRouterTask[]) =>
   GROUP_ORDER.map(b => ({ b, tasks: tasks.filter(t => t.model === b) })).filter(g => g.tasks.length > 0)
 
+/** Finished tasks (done or error), newest first. History is per session: the tasks atom holds at most MAX_TASKS and is lost on restart. */
+export const historyOf = (tasks: readonly ModelRouterTask[]): ModelRouterTask[] =>
+  tasks.filter(t => t.status !== 'running').sort((a, b) => b.startedAt - a.startedAt)
+
 export type EffortTone = 'low' | 'mid' | 'high' | 'none'
 
 /** low green, medium amber, high/xhigh/max red, unknown gray. */

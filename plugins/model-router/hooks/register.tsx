@@ -19,20 +19,22 @@ import {
   trimDays,
 } from './usage'
 import type { SessionFile } from './usage'
-import { renderPanel, renderProgressBar, renderTokens } from './view'
+import { renderHistory, renderPanel, renderProgressBar, renderTokens } from './view'
 import type { El } from './view'
 
 const PANE = 'model-router'
 const TOKENS_PANE = 'model-router-tokens'
 const TOKENS_TITLE = 'Tokens por modelo'
+const HISTORY_PANE = 'model-router-history'
+const HISTORY_TITLE = 'Historial de tareas'
 const MAX_TASKS = 200
 const REFRESH_MS = 30_000
 const LEVELS: ModelRouterLevel[] = ['haiku', 'sonnet', 'opus']
 
 const COMMAND = {
   name: 'model-router',
-  description: 'Open the model router pane; "on" / "off" toggles automatic routing; "usage" shows plan limits and consumption; "tokens" opens the tokens-per-model pane; "alerts on|off" and "umbrales <aviso> <crítico>" set the alerts',
-  argumentHint: '[on|off|usage|tokens|alerts on|off|umbrales <aviso> <crítico>]',
+  description: 'Open the model router pane; "on" / "off" toggles automatic routing; "usage" shows plan limits and consumption; "tokens" opens the tokens-per-model pane; "historial" opens the finished-tasks pane; "alerts on|off" and "umbrales <aviso> <crítico>" set the alerts',
+  argumentHint: '[on|off|usage|tokens|historial|alerts on|off|umbrales <aviso> <crítico>]',
 }
 
 const QUOTA_COMMAND = {
@@ -305,6 +307,10 @@ export const register: Register = on => {
       await $.ui.open({ id: TOKENS_PANE, title: TOKENS_TITLE })
       return { text: 'Model router: vista de tokens por modelo abierta.' }
     }
+    if (command.kind === 'history') {
+      await $.ui.open({ id: HISTORY_PANE, title: HISTORY_TITLE })
+      return { text: 'Model router: historial de tareas abierto.' }
+    }
     if (command.kind === 'usage') {
       await $.ui.open({ id: PANE, title: 'Model router' }).catch(() => {})
       return { text: await usageText($) }
@@ -521,6 +527,9 @@ export const register: Register = on => {
         onTokens: () => {
           void $.ui.open({ id: TOKENS_PANE, title: TOKENS_TITLE }).catch(() => {})
         },
+        onHistory: () => {
+          void $.ui.open({ id: HISTORY_PANE, title: HISTORY_TITLE }).catch(() => {})
+        },
       },
     )
   }).catch(($, e, next) => next(e))
@@ -528,6 +537,11 @@ export const register: Register = on => {
   on('ui.render', { component: 'Pane', requestId: TOKENS_PANE }, async ($, e) => {
     const c = await collect($)
     return renderTokens($.ui.resolve(e), { agg: c.agg, models: c.models }, { surface: e.surface, cols: Math.max(24, e.props.bodyColumns) })
+  }).catch(($, e, next) => next(e))
+
+  on('ui.render', { component: 'Pane', requestId: HISTORY_PANE }, async ($, e) => {
+    const list = await read($, tasks)
+    return renderHistory($.ui.resolve(e), { tasks: list }, { surface: e.surface, cols: Math.max(24, e.props.bodyColumns) })
   }).catch(($, e, next) => next(e))
 }
 

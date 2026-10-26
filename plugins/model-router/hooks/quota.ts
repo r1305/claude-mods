@@ -31,6 +31,7 @@ export type ModelRouterCommand =
   | { kind: 'toggle'; on: boolean }
   | { kind: 'usage' }
   | { kind: 'tokens' }
+  | { kind: 'history' }
   | { kind: 'alerts'; on: boolean }
   | { kind: 'thresholds'; warn: number; critical: number }
   | { kind: 'error'; message: string }
@@ -53,7 +54,7 @@ export const LEVEL_MARK: Record<Level, string> = { normal: '●', aviso: '▲', 
 export const LEVEL_NAME: Record<Level, string> = { normal: 'normal', aviso: 'aviso', critico: 'crítico' }
 
 export const COMMAND_USAGE =
-  '/model-router usage | /model-router alerts on|off | /model-router umbrales <aviso> <crítico> | /quota (alias de usage)'
+  '/model-router usage | /model-router tokens | /model-router historial | /model-router alerts on|off | /model-router umbrales <aviso> <crítico> | /quota (alias de usage)'
 
 const isWindowKind = (kind: string): kind is ModelRouterWindowKind => kind === 'five_hour' || kind === 'seven_day'
 
@@ -200,6 +201,7 @@ export function parseCommand(args: string): ModelRouterCommand {
   if ((head === 'on' || head === 'off') && rest.length === 0) return { kind: 'toggle', on: head === 'on' }
   if (head === 'usage') return { kind: 'usage' }
   if (head === 'tokens') return { kind: 'tokens' }
+  if (head === 'historial') return { kind: 'history' }
   if (head === 'alerts') {
     if (rest.length === 1 && (rest[0] === 'on' || rest[0] === 'off')) return { kind: 'alerts', on: rest[0] === 'on' }
     return { kind: 'error', message: `Uso: ${COMMAND_USAGE}` }

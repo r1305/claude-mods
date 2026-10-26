@@ -24,10 +24,11 @@ import {
   limitTiny,
   modelRows,
   pct,
+  fmtDur,
   planLimits,
 } from './usage'
 import type { Aggregate } from './usage'
-import { EFFORT_COLOR, effortTone, groupByModel } from './progress'
+import { EFFORT_COLOR, effortTone, groupByModel, historyOf } from './progress'
 import type { RunProgress } from './progress'
 
 export type Els = ReturnType<EngineInterface['ui']['resolve']>
@@ -55,6 +56,7 @@ export type PanelOpts = {
   bodyRows: number
   onToggle: () => void
   onTokens: () => void
+  onHistory: () => void
 }
 
 type Style = { color?: string; bold?: boolean; dimColor?: boolean; inverse?: boolean }
@@ -216,9 +218,9 @@ type RowStatus = ModelRouterTask['status']
  * One task row: model glyph, description, and on the right the effort in small type coloured by
  * EFFORT_COLOR, then the status.
  */
-const taskRowSvg = (W: number, b: ModelRouterBucket, desc: string, effort: string, status: RowStatus, last = true): string => {
+const taskRowSvg = (W: number, b: ModelRouterBucket, desc: string, effort: string, status: RowStatus, last = true, dur = ''): string => {
   const st = STATUS_TXT[status]
-  const rightLen = effort.length + st.length + 3
+  const rightLen = effort.length + st.length + dur.length + 3
   const x0 = 28
   const d = short(desc, Math.max(4, Math.floor((W - x0 - 6 - rightLen * 6.4) / 6.8)))
   const eff = `<tspan font-size="9.5" style="fill:var(--${EFFORT_COLOR[effortTone(effort)].css})">${xml(effort)}</tspan>`
@@ -227,7 +229,7 @@ const taskRowSvg = (W: number, b: ModelRouterBucket, desc: string, effort: strin
     W,
     SVG_ROW_H,
     `${lead}<text class="t" x="${x0}" y="17" font-family="${FONT}" font-size="12" font-weight="600">${xml(d)}</text>
-<text class="s" x="${W}" y="17" text-anchor="end" font-family="${FONT}" font-size="11">${eff} · <tspan class="cf ${STATUS_CLS[status]}" font-weight="700">${st}</tspan></text>`,
+<text class="s" x="${W}" y="17" text-anchor="end" font-family="${FONT}" font-size="11">${eff} · <tspan class="cf ${STATUS_CLS[status]}" font-weight="700">${st}</tspan>${dur !== '' ? ` · ${xml(dur)}` : ''}</text>`,
   )
 }
 
@@ -473,7 +475,7 @@ export function renderPanel(els: Els, d: PanelData, o: PanelOpts): El {
         ])
       })
       if (d.turnTasks.length === 0) rows.push(L('tl-none', [['Sin tareas en este turno', DIM]]))
-      return { title: [['Tareas del turno', BOLD], [`  ${d.turnTasks.length}`, DIM]], body: rows }
+      return { title: [['Tareas en progreso', BOLD], [`  ${d.turnTasks.length}`, DIM]], body: rows }
     },
   }
 
@@ -579,7 +581,7 @@ export function renderPanel(els: Els, d: PanelData, o: PanelOpts): El {
   const cList = (): CBlock => ({
     id: 'c-list',
     name: 'tareas',
-    title: `Tareas · ${d.turnTasks.length}`,
+    title: `Tareas en progreso · ${d.turnTasks.length}`,
     partial: true,
     rows: [
       ...listItems.map(it => {
@@ -681,6 +683,9 @@ export function renderPanel(els: Els, d: PanelData, o: PanelOpts): El {
         </Button>
         <Button key="tokens" hotkey="t" onPress={o.onTokens}>
           t Tokens
+        </Button>
+        <Button key="history" hotkey="h" onPress={o.onHistory}>
+          h Historial
         </Button>
         {!compact && (
           <Text dimColor wrap="truncate-end">
@@ -790,6 +795,62 @@ export function renderTokens(els: Els, d: { agg: Aggregate; models: ModelRouterM
       {ln('t2', [['Esta sesión', BOLD], [`  ${fmt(rows.reduce((s, r) => s + r.total, 0))}`, DIM]])}
       {sess.length > 0 ? sess : ln('m-none', [['Sin turnos con tokens en esta sesión', DIM]])}
       {ln('t3', [[`Reparto 7 días: ${BUCKETS.filter(b => d.agg.week[b] > 0).map(b => `${MODEL_LETTER[b]} ${pct(d.agg.week[b], d.agg.week.total)} %`).join(' · ') || '—'}`, DIM]])}
+    </Box>
+  )
+}
+
+/** Third pane (`model-router-history`): finished tasks of this session (done or error) by model, newest first. */
+export function renderHistory(els: Els, d: { tasks: readonly ModelRouterTask[] }, o: TokensOpts): El {
+  const { Box, Text } = els
+  const Svg = o.surface === 'desktop' && 'Svg' in els ? els.Svg : null
+  const ic = icons(o.surface)
+  const inner = Math.max(10, o.cols - 2)
+  const ln = (key: string, segs: Seg[]): El => (
+    <Text key={key} wrap="truncate-end">
+      {segs.map((s, i) =>
+        typeof s === 'string' ? (
+          <Text key={`s${i}`}>{s}</Text>
+        ) : (
+          <Text key={`s${i}`} {...s[1]}>
+            {s[0]}
+          </Text>
+        ),
+      )}
+    </Text>
+  )
+  const groups = groupByModel(historyOf(d.tasks))
+  const W = svgWidth(inner)
+  const body = groups.flatMap(g => {
+    const text = `${MODEL_NAME[g.b]} · ${g.tasks.length}`
+    const head =
+      Svg !== null ? (
+        <Svg key={`h-${g.b}`} source={chipsSvg(W, [{ b: g.b, text }])} alt={text} width={W} height={SVG_CHIPS_H} />
+      ) : (
+        ln(`h-${g.b}`, [[`${ic[g.b]} `, { color: MODEL_COLOR[g.b] }], [text, { bold: true, color: MODEL_COLOR[g.b] }]])
+      )
+    const rows = g.tasks.map((t, i) => {
+      const desc = t.description || t.subagentType || 'subagente'
+      const effort = t.effort ?? '—'
+      const st = STATUS_TXT[t.status]
+      const dur = t.durationMs !== undefined ? fmtDur(t.durationMs) : ''
+      if (Svg !== null)
+        return <Svg key={`r-${t.id}`} source={taskRowSvg(W, g.b, desc, effort, t.status, i === g.tasks.length - 1, dur)} alt={`${desc} · ${effort} · ${st}${dur !== '' ? ` · ${dur}` : ''}`} width={W} height={SVG_ROW_H} />
+      const rightLen = effort.length + st.length + (dur !== '' ? dur.length + 3 : 0) + 5
+      return ln(`r-${t.id}`, [
+        [`${i === g.tasks.length - 1 ? '└' : '├'} `, DIM],
+        [`${ic[t.status]} `, { color: t.status === 'error' ? 'red' : 'green' }],
+        short(desc, Math.max(4, inner - 7 - rightLen)),
+        '  ',
+        [effort, { color: EFFORT_COLOR[effortTone(effort)].color, dimColor: true }],
+        [` · ${st}${dur !== '' ? ` · ${dur}` : ''}`, DIM],
+      ])
+    })
+    return [head, ...rows]
+  })
+  return (
+    <Box flexDirection="column">
+      {ln('t1', [['Historial de tareas', BOLD], ['  esta sesión, más recientes primero', DIM]])}
+      {body.length > 0 ? body : ln('none', [['Aún no hay tareas completadas', DIM]])}
     </Box>
   )
 }
