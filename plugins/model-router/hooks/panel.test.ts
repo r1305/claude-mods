@@ -64,7 +64,7 @@ type Limits = { kind: string; percentUsed: number; resetsAt?: string }[]
 
 const FIVE_RESET = new Date(NOW + 2 * 3600 * 1000 + 10 * 60000).toISOString()
 
-function world(on: On, opts: { limits?: Limits; files?: Record<string, string>; openFails?: boolean } = {}) {
+function world(on: On, opts: { limits?: Limits; files?: Record<string, string>; openFails?: boolean; opened?: unknown[] } = {}) {
   const files = opts.files ?? {}
   const dir = '/cfg/model-router/usage'
   mock.clock(on, { now: NOW })
@@ -89,8 +89,9 @@ function world(on: On, opts: { limits?: Limits; files?: Record<string, string>; 
         .map(p => ({ name: p.slice(dir.length + 1), kind: 'file', size: files[p]?.length ?? 0 })),
     } as never
   })
-  on('ui.open', () => {
+  on('ui.open', (_$, e) => {
     if (opts.openFails) throw new Error('boom')
+    opts.opened?.push((e as { id?: string }).id)
     return { value: { isPlaced: true } } as never
   })
   on('session.usage', () =>
@@ -178,7 +179,13 @@ test('resumen with data: how am I doing, which model runs, today vs 7 days', asy
   expect(text).toContain('Consumo')
   expect(text).toMatch(/Hoy .*7 días/)
   expect(text).toContain('Detalle de consumo: /quota')
-  for (const gone of ['Tareas', 'Historial reciente', 'Reparto por modelo', 'Por sesión', 'Esta sesión', 'Costo estimado', 'Ahora mismo', 'Los % de límites son los oficiales']) {
+  expect(text).toContain('Tareas del turno  3')
+  expect(text).toMatch(/Opus · 1\n +» Integrar pagos con Stripe +— · en curso/)
+  expect(text).toMatch(/Haiku · 1\n +✓ Buscar archivos de login +— · hecha/)
+  expect(text.indexOf('Opus · 1')).toBeLessThan(text.indexOf('Haiku · 1'))
+  expect(text).toMatch(/Principal +Sonnet · —/)
+  expect(JSON.stringify(await ui.drawn())).toContain('"color":"gray","dimColor":true')
+  for (const gone of ['Historial reciente', 'Reparto por modelo', 'Por sesión', 'Esta sesión', 'Costo estimado', 'Ahora mismo', 'Los % de límites son los oficiales']) {
     expect(text).not.toContain(gone)
   }
   expect(text).not.toContain('~0')
@@ -213,6 +220,37 @@ test('resumen without limits and without tasks shows friendly empty states and n
   expect(text).toContain('Sin datos de límites')
   expect(text).toContain('Sin datos: los límites aparecen con una suscripción de Claude.')
   expect(text).not.toContain('Modelos en curso')
+  expect(text).toContain('Sin tareas en este turno')
+  expect(text).not.toContain('Principal')
+})
+
+test('a new user turn restarts the task list', async ($, on) => {
+  world(on, { limits: LIMITS_OK })
+  on('turn.start', (_$, e) => ({ turnId: e.turnId }) as never)
+  await begin($)
+  await $.agent.spawn(spawn('Buscar archivos de login'))
+  await $.turn.start({ text: 'hola', turnId: 't2' } as never)
+  const text = await textOfPane(await $.ui.mount(pane()))
+  expect(text).toContain('Tareas del turno  0')
+  expect(text).toContain('Sin tareas en este turno')
+  expect(text).not.toContain('Buscar archivos de login')
+})
+
+test('tokens pane: per family today and 7 days, and the session per exact model', async ($, on) => {
+  const opened: unknown[] = []
+  world(on, { limits: LIMITS_OK, files: seedFiles(), opened })
+  await begin($)
+  await seedTasks($)
+  const out = await $.command.run({ command: 'model-router', args: 'tokens' } as never)
+  expect(out.text).toContain('tokens por modelo')
+  expect(opened).toContain('model-router-tokens')
+  const ui = await $.ui.mount({ ...(pane() as object), requestId: 'model-router-tokens' } as never)
+  const text = await textOfPane(ui)
+  expect(text).toContain('Tokens por modelo')
+  expect(text).toMatch(/Opus +.*hoy 7 k tokens · 7 días 7 k tokens/)
+  expect(text).toMatch(/Haiku +.*7 días 2,4 k tokens/)
+  expect(text).toMatch(/claude-opus-5-5 4 k tokens/)
+  expect(text).toMatch(/claude-sonnet-4-5 800 tokens/)
 })
 
 test('narrow viewport uses the compact one-line layout and never overflows', async ($, on) => {

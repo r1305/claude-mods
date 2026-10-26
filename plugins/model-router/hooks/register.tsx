@@ -3,7 +3,7 @@ import type { AgentSpawnResult, EngineInterface, Register, Timer } from 'claude-
 
 import type { ModelRouterAlertMemories, ModelRouterLevel, ModelRouterLimit, ModelRouterModels, ModelRouterPrefs, ModelRouterTask, ModelRouterUsageFile } from '../types'
 import { DEFAULT_PREFS, PREFS_KEY, WINDOWS, addUsage, alertText, emptyMemories, evaluateAlerts, parseCommand, parsePrefs, windowsOf } from './quota'
-import { progressOf } from './progress'
+import { progressOf, turnTasks } from './progress'
 import { route, routeNote } from './route'
 import {
   FLUSH_MS,
@@ -19,18 +19,20 @@ import {
   trimDays,
 } from './usage'
 import type { SessionFile } from './usage'
-import { renderPanel, renderProgressBar } from './view'
+import { renderPanel, renderProgressBar, renderTokens } from './view'
 import type { El } from './view'
 
 const PANE = 'model-router'
+const TOKENS_PANE = 'model-router-tokens'
+const TOKENS_TITLE = 'Tokens por modelo'
 const MAX_TASKS = 200
 const REFRESH_MS = 30_000
 const LEVELS: ModelRouterLevel[] = ['haiku', 'sonnet', 'opus']
 
 const COMMAND = {
   name: 'model-router',
-  description: 'Open the model router pane; "on" / "off" toggles automatic routing; "usage" shows plan limits and consumption; "alerts on|off" and "umbrales <aviso> <crítico>" set the alerts',
-  argumentHint: '[on|off|usage|alerts on|off|umbrales <aviso> <crítico>]',
+  description: 'Open the model router pane; "on" / "off" toggles automatic routing; "usage" shows plan limits and consumption; "tokens" opens the tokens-per-model pane; "alerts on|off" and "umbrales <aviso> <crítico>" set the alerts',
+  argumentHint: '[on|off|usage|tokens|alerts on|off|umbrales <aviso> <crítico>]',
 }
 
 const QUOTA_COMMAND = {
@@ -52,6 +54,8 @@ const memories = atom({ plugin: 'model-router', key: 'memories' } as const, empt
 const runSeq = atom({ plugin: 'model-router', key: 'runSeq' } as const, 0)
 // Effort the main session runs at, from its last turn.step.
 const effort = atom({ plugin: 'model-router', key: 'effort' } as const, null as string | null)
+// Model the main session answered with last, from its turn.complete.
+const mainModel = atom({ plugin: 'model-router', key: 'mainModel' } as const, null as string | null)
 
 const POLICY = [
   'Model routing: the model-router mod is a middleware for every Agent tool call (all agent types except forks and workflow agents).',
@@ -281,6 +285,10 @@ export const register: Register = on => {
       await savePrefs($, { ...config, warn: command.warn, critical: command.critical })
       return { text: `Umbrales: aviso ${command.warn} %, crítico ${command.critical} %.` }
     }
+    if (command.kind === 'tokens') {
+      await $.ui.open({ id: TOKENS_PANE, title: TOKENS_TITLE })
+      return { text: 'Model router: vista de tokens por modelo abierta.' }
+    }
     if (command.kind === 'usage') {
       await $.ui.open({ id: PANE, title: 'Model router' }).catch(() => {})
       return { text: await usageText($) }
@@ -357,10 +365,16 @@ export const register: Register = on => {
     if (typeof level === 'string') {
       try {
         if (e.agentId === undefined) {
-          await update($, effort, () => level)
+          if ((await read($, effort)) !== level) {
+            await update($, effort, () => level)
+            $.ui.invalidate('ui.render')
+          }
         } else {
           const agentId = e.agentId
-          await update($, tasks, list => list.map(t => (t.id === agentId && t.effort !== level ? { ...t, effort: level } : t)))
+          if ((await read($, tasks)).some(t => t.id === agentId && t.effort !== level)) {
+            await update($, tasks, list => list.map(t => (t.id === agentId && t.effort !== level ? { ...t, effort: level } : t)))
+            $.ui.invalidate('ui.render')
+          }
         }
       } catch {}
     }
@@ -379,7 +393,12 @@ export const register: Register = on => {
         const now = await $.clock.now()
         await update($, models, prev => addUsage(prev, u.model ?? '', u))
         await update($, days, d => addTokens(d, now, bucketOf(u.model), total))
+        if (e.agentId === undefined && u.model) {
+          const name = u.model
+          await update($, mainModel, () => name)
+        }
         await flush($, false)
+        $.ui.invalidate('ui.render')
       } catch {}
     }
     const agentId = e.agentId
@@ -441,13 +460,14 @@ export const register: Register = on => {
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     startTick($)
     const els = $.ui.resolve(e)
-    const [enabled, c, list, config, run, level] = await Promise.all([
+    const [enabled, c, list, config, run, level, main] = await Promise.all([
       read($, isEnabled),
       collect($),
       read($, tasks),
       read($, prefs),
       read($, runSeq),
       read($, effort),
+      read($, mainModel),
     ])
     const rows = e.viewport?.rows ?? 30
     const scroll = e.props.scroll as { bodyRows?: number } | undefined
@@ -466,6 +486,8 @@ export const register: Register = on => {
         route: routeNote(c.limits, config),
         progress: progressOf(list, run),
         effort: level,
+        turnTasks: turnTasks(list, run),
+        mainModel: main ? bucketOf(main) : null,
       },
       {
         surface: e.surface,
@@ -477,8 +499,16 @@ export const register: Register = on => {
             .then(refresh)
             .catch(() => {})
         },
+        onTokens: () => {
+          void $.ui.open({ id: TOKENS_PANE, title: TOKENS_TITLE }).catch(() => {})
+        },
       },
     )
+  }).catch(($, e, next) => next(e))
+
+  on('ui.render', { component: 'Pane', requestId: TOKENS_PANE }, async ($, e) => {
+    const c = await collect($)
+    return renderTokens($.ui.resolve(e), { agg: c.agg, models: c.models }, { surface: e.surface, cols: Math.max(24, e.props.bodyColumns) })
   }).catch(($, e, next) => next(e))
 }
 

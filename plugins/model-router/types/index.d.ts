@@ -99,6 +99,7 @@ declare module 'claude-code' {
       memories: ModelRouterAlertMemories
       runSeq: number
       effort: string | null
+      mainModel: string | null
     }
   }
 }

@@ -427,6 +427,13 @@ export const sessionOf = (models: ModelRouterModels): ModelRouterSessionTokens =
   return out
 }
 
+/** Session tokens per exact model name, largest first, with its family. */
+export const modelRows = (models: ModelRouterModels) =>
+  Object.entries(models)
+    .map(([name, row]) => ({ name, b: bucketOf(name), total: totalTokensOf(row), ...row }))
+    .filter(r => r.total > 0)
+    .sort((a, b) => b.total - a.total)
+
 export type TextSummaryInput = {
   agg: Aggregate
   limits: readonly ModelRouterLimit[]

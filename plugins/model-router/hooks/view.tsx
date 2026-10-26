@@ -1,8 +1,9 @@
 import type { EngineInterface } from 'claude-code'
 
-import type { ModelRouterBucket, ModelRouterLimit, ModelRouterPrefs, ModelRouterTask } from '../types'
+import type { ModelRouterBucket, ModelRouterLimit, ModelRouterModels, ModelRouterPrefs, ModelRouterTask } from '../types'
 import { LEVEL_MARK, LEVEL_NAME, NO_DATA, WINDOWS, levelOf } from './quota'
 import {
+  BUCKETS,
   HELP_HIGH,
   MODEL_COLOR,
   MODEL_LETTER,
@@ -21,9 +22,12 @@ import {
   limitLabel,
   limitShort,
   limitTiny,
+  modelRows,
+  pct,
   planLimits,
 } from './usage'
 import type { Aggregate } from './usage'
+import { EFFORT_COLOR, effortTone, groupByModel } from './progress'
 import type { RunProgress } from './progress'
 
 export type Els = ReturnType<EngineInterface['ui']['resolve']>
@@ -40,6 +44,10 @@ export type PanelData = {
   progress: RunProgress | null
   /** effort the main session runs at, from its turn.step */
   effort: string | null
+  /** subagents of the current user turn, in display order */
+  turnTasks: readonly ModelRouterTask[]
+  /** family of the model the main session answered with last, null while unknown */
+  mainModel: ModelRouterBucket | null
 }
 
 export type PanelOpts = {
@@ -48,6 +56,7 @@ export type PanelOpts = {
   /** rows the pane body can show */
   bodyRows: number
   onToggle: () => void
+  onTokens: () => void
 }
 
 type Style = { color?: string; bold?: boolean; dimColor?: boolean; inverse?: boolean }
@@ -195,6 +204,45 @@ const chipsSvg = (W: number, items: { b: ModelRouterBucket; text: string }[]): s
     return out
   })
   return svgDoc(W, SVG_CHIPS_H, parts.join('\n'))
+}
+
+const SVG_ROW_H = 22
+const STATUS_TXT = { running: 'en curso', done: 'hecha', error: 'error' } as const
+const STATUS_CLS = { running: 'neon', done: 'lv-normal', error: 'lv-critico' } as const
+type RowStatus = ModelRouterTask['status'] | 'main'
+
+/**
+ * One task row: model glyph, description, and on the right the effort in small type coloured by
+ * EFFORT_COLOR, then the status; the main session row names its model instead of a status.
+ */
+const taskRowSvg = (W: number, b: ModelRouterBucket, desc: string, effort: string, status: RowStatus): string => {
+  const isMain = status === 'main'
+  const st = isMain ? '' : STATUS_TXT[status]
+  const rightLen = (isMain ? MODEL_NAME[b].length + 3 : 0) + effort.length + st.length + 3
+  const d = short(desc, Math.max(4, Math.floor((W - 24 - rightLen * 6.4) / 6.8)))
+  const eff = `<tspan font-size="9.5" style="fill:var(--${EFFORT_COLOR[effortTone(effort)].css})">${xml(effort)}</tspan>`
+  return svgDoc(
+    W,
+    SVG_ROW_H,
+    `${modelGlyph(b, 7)}<text class="t" x="18" y="17" font-family="${FONT}" font-size="12" font-weight="600">${xml(d)}</text>
+<text class="s" x="${W}" y="17" text-anchor="end" font-family="${FONT}" font-size="11">${
+      isMain
+        ? `<tspan class="cf m-${b}" font-weight="700">${MODEL_NAME[b]}</tspan> · ${eff}`
+        : `${eff} · <tspan class="cf ${STATUS_CLS[status]}" font-weight="700">${st}</tspan>`
+    }</text>`,
+  )
+}
+
+/** One family row of the tokens view: glyph, name, today and 7 days, and a bar of its share of the week. */
+const familySvg = (W: number, b: ModelRouterBucket, detail: string, p: number): string => {
+  const fw = (clamp(p, 0, 100) / 100) * (W - 18)
+  return svgDoc(
+    W,
+    32,
+    `${modelGlyph(b, 7)}<text class="t" x="18" y="17" font-family="${FONT}" font-size="12" font-weight="600">${MODEL_NAME[b]}</text>
+<text class="s" x="${W}" y="17" text-anchor="end" font-family="${FONT}" font-size="11">${xml(detail)}</text>
+<g class="m-${b}"><rect class="k" x="18" y="24" width="${W - 18}" height="4" rx="2"/>${fw > 0 ? `<rect class="fill glow" fill="currentColor" x="18" y="24" width="${Math.max(4, fw).toFixed(1)}" height="4" rx="2"/>` : ''}</g>`,
+  )
 }
 
 export function renderPanel(els: Els, d: PanelData, o: PanelOpts): El {
@@ -362,6 +410,56 @@ export function renderPanel(els: Els, d: PanelData, o: PanelOpts): El {
     }),
   }
 
+  type ListItem =
+    | { kind: 'head'; key: string; b: ModelRouterBucket; n: number }
+    | { kind: 'row'; key: string; b: ModelRouterBucket; desc: string; effort: string; status: RowStatus }
+  const listItems: ListItem[] = [
+    ...(d.mainModel !== null ? [{ kind: 'row' as const, key: 'main', b: d.mainModel, desc: 'Principal', effort: d.effort ?? '—', status: 'main' as const }] : []),
+    ...groupByModel(d.turnTasks).flatMap((g): ListItem[] => [
+      { kind: 'head', key: `g-${g.b}`, b: g.b, n: g.tasks.length },
+      ...g.tasks.map(t => ({ kind: 'row' as const, key: t.id, b: g.b, desc: t.description || t.subagentType || 'subagente', effort: t.effort ?? '—', status: t.status })),
+    ]),
+  ]
+  const statusSeg = (s: RowStatus): Seg =>
+    s === 'main' ? ['· ', DIM] : [`${ic[s]} `, { color: s === 'error' ? 'red' : s === 'done' ? 'green' : 'cyan' }]
+  const effortSeg = (e: string): Seg => [e, { color: EFFORT_COLOR[effortTone(e)].color, dimColor: true }]
+  const listBlock: Block = {
+    id: 'tareas',
+    partial: true,
+    build: inner => {
+      const W = svgWidth(inner)
+      const rows: Row[] = listItems.map(it => {
+        if (it.kind === 'head') {
+          const text = `${MODEL_NAME[it.b]} · ${it.n}`
+          return Svg !== null
+            ? { h: 2, el: <Svg key={`tl-${it.key}`} source={chipsSvg(W, [{ b: it.b, text }])} alt={text} width={W} height={SVG_CHIPS_H} /> }
+            : L(`tl-${it.key}`, [dot(it.b), [text, { bold: true, color: MODEL_COLOR[it.b] }]])
+        }
+        const isMain = it.status === 'main'
+        const st = isMain ? '' : STATUS_TXT[it.status]
+        if (Svg !== null) {
+          return {
+            h: 1,
+            el: <Svg key={`tl-${it.key}`} source={taskRowSvg(W, it.b, it.desc, it.effort, it.status)} alt={`${it.desc} · ${isMain ? `${MODEL_NAME[it.b]} · ` : ''}${it.effort}${st !== '' ? ` · ${st}` : ''}`} width={W} height={SVG_ROW_H} />,
+          }
+        }
+        const rightLen = (isMain ? MODEL_NAME[it.b].length + 3 : 0) + it.effort.length + (st !== '' ? st.length + 3 : 0) + 2
+        return L(`tl-${it.key}`, [
+          isMain ? '' : '  ',
+          statusSeg(it.status),
+          ...(isMain ? [dot(it.b)] : []),
+          short(it.desc, Math.max(4, inner - 7 - rightLen)),
+          '  ',
+          ...(isMain ? ([[MODEL_NAME[it.b], { color: MODEL_COLOR[it.b] }], ' · '] as Seg[]) : []),
+          effortSeg(it.effort),
+          ...(st !== '' ? ([[` · ${st}`, DIM]] as Seg[]) : []),
+        ])
+      })
+      if (d.turnTasks.length === 0) rows.push(L('tl-none', [['Sin tareas en este turno', DIM]]))
+      return { title: [['Tareas del turno', BOLD], [`  ${d.turnTasks.length}`, DIM]], body: rows }
+    },
+  }
+
   const prog = d.progress
   const effortTxt = `esfuerzo ${d.effort ?? '—'}`
   const taskBlock: Block | undefined =
@@ -390,7 +488,7 @@ export function renderPanel(els: Els, d: PanelData, o: PanelOpts): El {
           },
         }
 
-  const blocks: Block[] = [...(taskBlock ? [taskBlock] : []), limitsBlock, ...(isLive ? [modelsBlock] : []), usageBlock]
+  const blocks: Block[] = [...(taskBlock ? [taskBlock] : []), limitsBlock, listBlock, ...(isLive ? [modelsBlock] : []), usageBlock]
 
   const footH = isNarrow ? 2 : 1
   const avail = Math.max(1, o.bodyRows - 2 - footH)
@@ -501,6 +599,20 @@ export function renderPanel(els: Els, d: PanelData, o: PanelOpts): El {
     const text = full.length <= W ? full : runCounts.map(x => `${MODEL_LETTER[x.b]} ${x.n}`).join(' · ')
     return { id: 'c-mod', name: 'modelos', title: `En curso · ${running.length}`, rows: [L('cm', [[short(text, W), BOLD]])] }
   }
+  const cList = (): CBlock => ({
+    id: 'c-list',
+    name: 'tareas',
+    title: `Tareas · ${d.turnTasks.length}`,
+    partial: true,
+    rows: [
+      ...listItems.map(it => {
+        if (it.kind === 'head') return L(`cli-${it.key}`, [[short(`${MODEL_NAME[it.b]} · ${it.n}`, W), { bold: true, color: MODEL_COLOR[it.b] }]])
+        const mark = it.status === 'main' ? `· ${MODEL_LETTER[it.b]} ` : ` ${ic[it.status]} `
+        return L(`cli-${it.key}`, [mark, effortSeg(it.effort), ' ', short(it.desc, W - mark.length - it.effort.length - 1)])
+      }),
+      ...(d.turnTasks.length === 0 ? [L('cl-none', [[short('Sin tareas en este turno', W), DIM]])] : []),
+    ],
+  })
   const cUse = (): CBlock => ({
     id: 'c-use',
     name: 'consumo',
@@ -511,7 +623,7 @@ export function renderPanel(els: Els, d: PanelData, o: PanelOpts): El {
     const nodes: El[] = []
     const dropped: string[] = []
     let used = 0
-    for (const b of [...(prog !== null ? [cTask()] : []), cLimits(), ...(isLive ? [cModels()] : []), cUse()]) {
+    for (const b of [...(prog !== null ? [cTask()] : []), cLimits(), cList(), ...(isLive ? [cModels()] : []), cUse()]) {
       const left = room - used - 1
       const rows = left >= 1 ? takeRows(b.rows, left) : []
       if (rows.length === 0 || (rows.length < b.rows.length && !b.partial)) {
@@ -578,6 +690,9 @@ export function renderPanel(els: Els, d: PanelData, o: PanelOpts): El {
         <Button key="toggle" hotkey="p" onPress={o.onToggle}>
           {compact ? (on ? 'p Pausar' : 'p Activar') : on ? 'p Pausar enrutado' : 'p Activar enrutado'}
         </Button>
+        <Button key="tokens" hotkey="t" onPress={o.onTokens}>
+          t Tokens
+        </Button>
         {!compact && (
           <Text dimColor wrap="truncate-end">
             Detalle de consumo: /quota
@@ -625,6 +740,67 @@ export function renderProgressBar(els: Els, o: ProgressOpts): El {
         <Text dimColor>{effortTxt}</Text>
       </Box>
       {o.below}
+    </Box>
+  )
+}
+
+export type TokensOpts = { surface: string | undefined; cols: number }
+
+/**
+ * Second pane (`model-router-tokens`): tokens per model family for today and the last 7 days
+ * (every session with the mod), and this session's tokens per exact model name.
+ */
+export function renderTokens(els: Els, d: { agg: Aggregate; models: ModelRouterModels }, o: TokensOpts): El {
+  const { Box, Text } = els
+  const Svg = o.surface === 'desktop' && 'Svg' in els ? els.Svg : null
+  const ic = icons(o.surface)
+  const inner = Math.max(10, o.cols - 2)
+  const tiny = o.cols < 50
+  const fmt = tiny ? fmtTokensTiny : fmtTokensLong
+  const ln = (key: string, segs: Seg[]): El => (
+    <Text key={key} wrap="truncate-end">
+      {segs.map((s, i) =>
+        typeof s === 'string' ? (
+          <Text key={`s${i}`}>{s}</Text>
+        ) : (
+          <Text key={`s${i}`} {...s[1]}>
+            {s[0]}
+          </Text>
+        ),
+      )}
+    </Text>
+  )
+  const maxWeek = Math.max(1, ...BUCKETS.map(b => d.agg.week[b]))
+  const fams = BUCKETS.map(b => {
+    const detail = `hoy ${fmt(d.agg.today[b])} · 7 días ${fmt(d.agg.week[b])}`
+    const p = (d.agg.week[b] / maxWeek) * 100
+    if (Svg !== null) {
+      const W = svgWidth(inner)
+      return <Svg key={`f-${b}`} source={familySvg(W, b, detail, p)} alt={`${MODEL_NAME[b]}: ${detail}`} width={W} height={32} />
+    }
+    return ln(`f-${b}`, [
+      [`${ic[b]} `, { color: MODEL_COLOR[b] }],
+      [MODEL_NAME[b].padEnd(7), { bold: true, color: MODEL_COLOR[b] }],
+      ...(tiny ? [] : ([[bar(p, clamp(inner - 50, 4, 20)), { color: MODEL_COLOR[b] }], ' '] as Seg[])),
+      [detail, DIM],
+    ])
+  })
+  const rows = modelRows(d.models)
+  const sess = rows.map(r =>
+    ln(`m-${r.name}`, [
+      [`${ic[r.b]} `, { color: MODEL_COLOR[r.b] }],
+      [short(r.name, Math.max(6, inner - 14)), { bold: true, color: MODEL_COLOR[r.b] }],
+      ` ${fmt(r.total)}`,
+      ...(tiny ? [] : ([[`  entrada ${fmtTokensTiny(r.input)} · salida ${fmtTokensTiny(r.output)} · caché ${fmtTokensTiny(r.cacheRead)}/${fmtTokensTiny(r.cacheWrite)}`, DIM]] as Seg[])),
+    ]),
+  )
+  return (
+    <Box flexDirection="column">
+      {ln('t1', [['Tokens por modelo', BOLD], ['  hoy y 7 días, todas las sesiones', DIM]])}
+      {fams}
+      {ln('t2', [['Esta sesión', BOLD], [`  ${fmt(rows.reduce((s, r) => s + r.total, 0))}`, DIM]])}
+      {sess.length > 0 ? sess : ln('m-none', [['Sin turnos con tokens en esta sesión', DIM]])}
+      {ln('t3', [[`Reparto 7 días: ${BUCKETS.filter(b => d.agg.week[b] > 0).map(b => `${MODEL_LETTER[b]} ${pct(d.agg.week[b], d.agg.week.total)} %`).join(' · ') || '—'}`, DIM]])}
     </Box>
   )
 }

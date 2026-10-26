@@ -30,6 +30,7 @@ export type ModelRouterCommand =
   | { kind: 'show' }
   | { kind: 'toggle'; on: boolean }
   | { kind: 'usage' }
+  | { kind: 'tokens' }
   | { kind: 'alerts'; on: boolean }
   | { kind: 'thresholds'; warn: number; critical: number }
   | { kind: 'error'; message: string }
@@ -198,6 +199,7 @@ export function parseCommand(args: string): ModelRouterCommand {
   if (head === undefined) return { kind: 'show' }
   if ((head === 'on' || head === 'off') && rest.length === 0) return { kind: 'toggle', on: head === 'on' }
   if (head === 'usage') return { kind: 'usage' }
+  if (head === 'tokens') return { kind: 'tokens' }
   if (head === 'alerts') {
     if (rest.length === 1 && (rest[0] === 'on' || rest[0] === 'off')) return { kind: 'alerts', on: rest[0] === 'on' }
     return { kind: 'error', message: `Uso: ${COMMAND_USAGE}` }
