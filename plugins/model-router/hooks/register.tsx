@@ -365,8 +365,10 @@ export const register: Register = on => {
     if (e.agentId !== undefined) {
       const id = e.agentId
       try {
-        await update($, tasks, list => list.map(t => (t.id === id && t.status === 'running' ? { ...t, steps: (t.steps ?? 0) + 1 } : t)))
-        $.ui.invalidate('ui.render')
+        if ((await read($, tasks)).some(t => t.id === id && t.status === 'running')) {
+          await update($, tasks, list => list.map(t => (t.id === id && t.status === 'running' ? { ...t, steps: (t.steps ?? 0) + 1 } : t)))
+          $.ui.invalidate('ui.render')
+        }
       } catch {}
     }
     if (typeof level === 'string') {
