@@ -592,13 +592,14 @@ export type ProgressOpts = { surface: string | undefined; cols: number; progress
 
 /**
  * The bar above the prompt: the current task's progress, advancing as its subagents finish.
+ * Always drawn; a turn with no subagents yet shows `Tarea 0/0 · en espera`.
  * `below` is the row the other mods drew, kept beneath it.
  */
 export function renderProgressBar(els: Els, o: ProgressOpts): El {
   const { Box, Text } = els
   const Svg = o.surface === 'desktop' && 'Svg' in els ? els.Svg : null
   const p = o.progress
-  const label = `Tarea ${p.done}/${p.total}`
+  const label = `Tarea ${p.done}/${p.total}${p.total === 0 ? ' · en espera' : ''}`
   const effortTxt = `esfuerzo ${o.effort ?? '—'}`
   if (Svg !== null) {
     const width = Math.max(180, Math.min(1600, o.cols * 8 - 96))
@@ -614,7 +615,7 @@ export function renderProgressBar(els: Els, o: ProgressOpts): El {
       </Box>
     )
   }
-  const width = Math.max(6, Math.min(40, o.cols - 48))
+  const width = Math.max(6, Math.min(40, o.cols - 48 - (p.total === 0 ? 12 : 0)))
   return (
     <Box flexDirection="column">
       <Box flexDirection="row" gap={2}>

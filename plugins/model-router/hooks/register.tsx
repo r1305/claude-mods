@@ -337,13 +337,17 @@ export const register: Register = on => {
           }
           await update($, tasks, list => [...list.filter(t => t.id !== id), task].slice(-MAX_TASKS))
           await refreshStatus($)
+          $.ui.invalidate('ui.render')
         }
       } catch {}
     }
   }).catch(($, e, next) => next(e))
 
   on('turn.start', async ($, e, next) => {
-    if (e.agentId === undefined) await update($, runSeq, n => n + 1).catch(() => undefined)
+    if (e.agentId === undefined) {
+      await update($, runSeq, n => n + 1).catch(() => undefined)
+      $.ui.invalidate('ui.render')
+    }
     return next(e)
   }).catch(($, e, next) => next(e))
 
@@ -401,6 +405,7 @@ export const register: Register = on => {
             ),
           )
           await refreshStatus($)
+          $.ui.invalidate('ui.render')
         }
       } catch {}
     }
@@ -425,8 +430,8 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const [run, list, level] = await Promise.all([read($, runSeq), read($, tasks), read($, effort)])
-    const progress = progressOf(list, run)
-    if (progress === null || e.props.hasSurvey) return next(e)
+    if (e.props.hasSurvey) return next(e)
+    const progress = progressOf(list, run) ?? { total: 0, done: 0, running: 0, pct: 0 }
     // Other mods' bands drawn beneath this bar; Claude Code's own placeholder is never nested.
     const drawn = await Promise.resolve(next(e)).catch(() => null)
     const below = drawn && typeof drawn === 'object' && (drawn as { type?: string }).type !== 'engine' ? (drawn as El) : null

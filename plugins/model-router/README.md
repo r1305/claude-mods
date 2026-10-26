@@ -11,7 +11,7 @@ Elige el modelo (haiku, sonnet u opus) de cada subagente según una tabla de sue
 - **Semáforo de niveles** con dos umbrales configurables, 80 % (aviso) y 90 % (crítico). Es el mismo para el panel, la línea de estado, el texto de uso y el enrutado.
 - **Alertas** con aviso emergente al cruzar cada umbral, una vez por umbral y ventana.
 - **Tokens por modelo** de la sesión, por nombre exacto de modelo, con entrada, salida y caché de lectura y escritura por separado.
-- **Progreso de la tarea**: cuenta los subagentes lanzados en el turno actual y cuántos han terminado (`Tarea 2/5`, con barra y porcentaje). Se muestra en dos sitios: como bloque «Tarea en curso» del panel y como barra encima del cuadro de prompt, que avanza según terminan los subagentes. Se oculta hasta que el turno lanza el primero.
+- **Progreso de la tarea**: cuenta los subagentes lanzados en el turno actual y cuántos han terminado (`Tarea 2/5`, con barra y porcentaje). Se muestra en dos sitios: como bloque «Tarea en curso» del panel y como barra encima del cuadro de prompt, que avanza según terminan los subagentes. La barra está siempre visible: cada prompt nuevo reinicia la cuenta y, sin subagentes, muestra `Tarea 0/0 · en espera`; el bloque del panel aparece cuando el turno lanza el primero.
 - **Esfuerzo**: indica el `effort` (low, medium, high, xhigh, max) con el que corre la sesión principal y la tarea, leído del `turn.step`. Cada subagente guarda también su esfuerzo.
 - **Histórico** de 7 días por familia (haiku, sonnet, opus, otros), compartido entre sesiones con el mod.
 - No hace llamadas a modelos, no usa procesos, no abre conexiones y no tiene temporizadores sin limpieza.
