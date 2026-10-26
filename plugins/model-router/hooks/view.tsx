@@ -245,6 +245,32 @@ const familySvg = (W: number, b: ModelRouterBucket, detail: string, p: number): 
   )
 }
 
+const SESS_PARTS = [
+  { css: 'n1', color: 'cyan' },
+  { css: 'n2', color: 'magenta' },
+  { css: 'wa', color: 'yellow' },
+] as const
+
+/** One session-model row of the tokens view: glyph, exact name, total, a bar split in input / output / cache and the figures. */
+const sessionSvg = (W: number, b: ModelRouterBucket, name: string, total: string, parts: number[], detail: string): string => {
+  const sum = Math.max(1, parts.reduce((s, n) => s + n, 0))
+  let x = 18
+  const segs = parts.map((n, i) => {
+    const w = (n / sum) * (W - 18)
+    const out = w > 0 ? `<rect class="fill" style="fill:var(--${SESS_PARTS[i].css})" x="${x.toFixed(1)}" y="24" width="${w.toFixed(1)}" height="4"/>` : ''
+    x += w
+    return out
+  })
+  return svgDoc(
+    W,
+    44,
+    `${modelGlyph(b, 7)}<text class="t" x="18" y="17" font-family="${FONT}" font-size="12" font-weight="600">${xml(short(name, Math.max(6, Math.floor((W - 90) / 6.8))))}</text>
+<text class="s" x="${W}" y="17" text-anchor="end" font-family="${FONT}" font-size="11">${xml(total)}</text>
+<g><rect class="k" x="18" y="24" width="${W - 18}" height="4" rx="2"/>${segs.join('')}</g>
+<text class="s" x="18" y="40" font-family="${FONT}" font-size="10.5">${xml(detail)}</text>`,
+  )
+}
+
 export function renderPanel(els: Els, d: PanelData, o: PanelOpts): El {
   const { Box, Text, Button } = els
   const Svg = o.surface === 'desktop' && 'Svg' in els ? els.Svg : null
@@ -780,14 +806,24 @@ export function renderTokens(els: Els, d: { agg: Aggregate; models: ModelRouterM
     ])
   })
   const rows = modelRows(d.models)
-  const sess = rows.map(r =>
-    ln(`m-${r.name}`, [
+  const sess = rows.map(r => {
+    const parts = [r.input, r.output, r.cacheRead + r.cacheWrite]
+    const detail = `entrada ${fmtTokensTiny(r.input)} · salida ${fmtTokensTiny(r.output)} · caché ${fmtTokensTiny(r.cacheRead)}/${fmtTokensTiny(r.cacheWrite)}`
+    if (Svg !== null) {
+      const W = svgWidth(inner)
+      return <Svg key={`m-${r.name}`} source={sessionSvg(W, r.b, r.name, fmt(r.total), parts, detail)} alt={`${r.name}: ${fmt(r.total)} · ${detail}`} width={W} height={44} />
+    }
+    const sum = Math.max(1, parts[0] + parts[1] + parts[2])
+    const bw = clamp(inner - 40, 4, 20)
+    return ln(`m-${r.name}`, [
       [`${ic[r.b]} `, { color: MODEL_COLOR[r.b] }],
       [short(r.name, Math.max(6, inner - 14)), { bold: true, color: MODEL_COLOR[r.b] }],
       ` ${fmt(r.total)}`,
-      ...(tiny ? [] : ([[`  entrada ${fmtTokensTiny(r.input)} · salida ${fmtTokensTiny(r.output)} · caché ${fmtTokensTiny(r.cacheRead)}/${fmtTokensTiny(r.cacheWrite)}`, DIM]] as Seg[])),
-    ]),
-  )
+      ...(tiny
+        ? []
+        : ([' ', ...parts.map((n, i): Seg => [bar(100, Math.round((n / sum) * bw)), { color: SESS_PARTS[i].color }]), [`  ${detail}`, DIM]] as Seg[])),
+    ])
+  })
   return (
     <Box flexDirection="column">
       {ln('t1', [['Tokens por modelo', BOLD], ['  hoy y 7 días, todas las sesiones', DIM]])}
