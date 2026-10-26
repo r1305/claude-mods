@@ -147,7 +147,7 @@ const iconSvg = (icon: MeterIcon, cls: string, isLive: boolean, isDone: boolean)
 const meterSvg = (W: number, label: string, p: number, detail: string, lvl: 'normal' | 'aviso' | 'critico', isLive: boolean, icon: MeterIcon, segs = 0): string => {
   const v = clamp(p, 0, 100)
   const track = 7
-  const fw = v > 0 ? Math.max(track, (v / 100) * W) : 0
+  const fw = v > 0 || (isLive && icon === 'task') ? Math.max(track, (v / 100) * W) : 0
   const fwS = fw.toFixed(1)
   const isTask = icon === 'task'
   const g = isTask ? 'neon' : lvl
@@ -215,16 +215,20 @@ type RowStatus = ModelRouterTask['status'] | 'main'
  * One task row: model glyph, description, and on the right the effort in small type coloured by
  * EFFORT_COLOR, then the status; the main session row names its model instead of a status.
  */
-const taskRowSvg = (W: number, b: ModelRouterBucket, desc: string, effort: string, status: RowStatus): string => {
+const taskRowSvg = (W: number, b: ModelRouterBucket, desc: string, effort: string, status: RowStatus, last = true): string => {
   const isMain = status === 'main'
   const st = isMain ? '' : STATUS_TXT[status]
   const rightLen = (isMain ? MODEL_NAME[b].length + 3 : 0) + effort.length + st.length + 3
-  const d = short(desc, Math.max(4, Math.floor((W - 24 - rightLen * 6.4) / 6.8)))
+  const x0 = isMain ? 18 : 28
+  const d = short(desc, Math.max(4, Math.floor((W - x0 - 6 - rightLen * 6.4) / 6.8)))
   const eff = `<tspan font-size="9.5" style="fill:var(--${EFFORT_COLOR[effortTone(effort)].css})">${xml(effort)}</tspan>`
+  const lead = isMain
+    ? modelGlyph(b, 7)
+    : `<path style="color:var(--s);fill:none" d="M7 0V${last ? 11 : SVG_ROW_H}M7 11H14" stroke="currentColor" stroke-opacity=".6" stroke-width="1"/><circle class="m-${b}" cx="19" cy="11" r="2.4" fill="currentColor"/>`
   return svgDoc(
     W,
     SVG_ROW_H,
-    `${modelGlyph(b, 7)}<text class="t" x="18" y="17" font-family="${FONT}" font-size="12" font-weight="600">${xml(d)}</text>
+    `${lead}<text class="t" x="${x0}" y="17" font-family="${FONT}" font-size="12" font-weight="600">${xml(d)}</text>
 <text class="s" x="${W}" y="17" text-anchor="end" font-family="${FONT}" font-size="11">${
       isMain
         ? `<tspan class="cf m-${b}" font-weight="700">${MODEL_NAME[b]}</tspan> · ${eff}`
@@ -412,14 +416,15 @@ export function renderPanel(els: Els, d: PanelData, o: PanelOpts): El {
 
   type ListItem =
     | { kind: 'head'; key: string; b: ModelRouterBucket; n: number }
-    | { kind: 'row'; key: string; b: ModelRouterBucket; desc: string; effort: string; status: RowStatus }
+    | { kind: 'row'; key: string; b: ModelRouterBucket; desc: string; effort: string; status: RowStatus; last: boolean }
   const listItems: ListItem[] = [
-    ...(d.mainModel !== null ? [{ kind: 'row' as const, key: 'main', b: d.mainModel, desc: 'Principal', effort: d.effort ?? '—', status: 'main' as const }] : []),
+    ...(d.mainModel !== null ? [{ kind: 'row' as const, key: 'main', b: d.mainModel, desc: 'Principal', effort: d.effort ?? '—', status: 'main' as const, last: true }] : []),
     ...groupByModel(d.turnTasks).flatMap((g): ListItem[] => [
       { kind: 'head', key: `g-${g.b}`, b: g.b, n: g.tasks.length },
-      ...g.tasks.map(t => ({ kind: 'row' as const, key: t.id, b: g.b, desc: t.description || t.subagentType || 'subagente', effort: t.effort ?? '—', status: t.status })),
+      ...g.tasks.map((t, i) => ({ kind: 'row' as const, key: t.id, b: g.b, desc: t.description || t.subagentType || 'subagente', effort: t.effort ?? '—', status: t.status, last: i === g.tasks.length - 1 })),
     ]),
   ]
+  const branch = (last: boolean) => (last ? '└' : '├')
   const statusSeg = (s: RowStatus): Seg =>
     s === 'main' ? ['· ', DIM] : [`${ic[s]} `, { color: s === 'error' ? 'red' : s === 'done' ? 'green' : 'cyan' }]
   const effortSeg = (e: string): Seg => [e, { color: EFFORT_COLOR[effortTone(e)].color, dimColor: true }]
@@ -440,12 +445,12 @@ export function renderPanel(els: Els, d: PanelData, o: PanelOpts): El {
         if (Svg !== null) {
           return {
             h: 1,
-            el: <Svg key={`tl-${it.key}`} source={taskRowSvg(W, it.b, it.desc, it.effort, it.status)} alt={`${it.desc} · ${isMain ? `${MODEL_NAME[it.b]} · ` : ''}${it.effort}${st !== '' ? ` · ${st}` : ''}`} width={W} height={SVG_ROW_H} />,
+            el: <Svg key={`tl-${it.key}`} source={taskRowSvg(W, it.b, it.desc, it.effort, it.status, it.last)} alt={`${it.desc} · ${isMain ? `${MODEL_NAME[it.b]} · ` : ''}${it.effort}${st !== '' ? ` · ${st}` : ''}`} width={W} height={SVG_ROW_H} />,
           }
         }
         const rightLen = (isMain ? MODEL_NAME[it.b].length + 3 : 0) + it.effort.length + (st !== '' ? st.length + 3 : 0) + 2
         return L(`tl-${it.key}`, [
-          isMain ? '' : '  ',
+          isMain ? '' : [`${branch(it.last)} `, DIM],
           statusSeg(it.status),
           ...(isMain ? [dot(it.b)] : []),
           short(it.desc, Math.max(4, inner - 7 - rightLen)),
@@ -460,35 +465,7 @@ export function renderPanel(els: Els, d: PanelData, o: PanelOpts): El {
     },
   }
 
-  const prog = d.progress
-  const effortTxt = `esfuerzo ${d.effort ?? '—'}`
-  const taskBlock: Block | undefined =
-    prog === null
-      ? undefined
-      : {
-          id: 'tarea',
-          build: inner => {
-            const label = `Tarea ${prog.done}/${prog.total}`
-            const row: Row =
-              Svg !== null
-                ? {
-                    h: SVG_METER_ROWS,
-                    el: (
-                      <Svg
-                        key="tarea"
-                        source={meterSvg(svgWidth(inner), label, prog.pct, effortTxt, 'normal', prog.running > 0, 'task', prog.total)}
-                        alt={`${label}, ${fmtPct(prog.pct)}, ${effortTxt}`}
-                        width={svgWidth(inner)}
-                        height={SVG_METER_H}
-                      />
-                    ),
-                  }
-                : meter('tarea', `${taskMark(prog)} ${label}`, prog.pct, effortTxt, inner)
-            return { title: [['Tarea en curso', BOLD]], body: [row] }
-          },
-        }
-
-  const blocks: Block[] = [...(taskBlock ? [taskBlock] : []), limitsBlock, listBlock, ...(isLive ? [modelsBlock] : []), usageBlock]
+  const blocks: Block[] = [limitsBlock, listBlock, ...(isLive ? [modelsBlock] : []), usageBlock]
 
   const footH = isNarrow ? 2 : 1
   const avail = Math.max(1, o.bodyRows - 2 - footH)
@@ -582,18 +559,6 @@ export function renderPanel(els: Els, d: PanelData, o: PanelOpts): El {
     if (high >= d.prefs.warn) rows.push(L('cl-help', [['→ Usa modelos más baratos', { bold: true, color: levelColor(high, d.prefs) }]]))
     return { id: 'c-lim', name: 'límites', title: 'Límites', rows, partial: true }
   }
-  const cTask = (): CBlock => {
-    const label = prog !== null ? `${taskMark(prog)} ${prog.done}/${prog.total}` : ''
-    return {
-      id: 'c-task',
-      name: 'tarea',
-      title: 'Tarea en curso',
-      rows: [
-        L('ct', [[`${label} `, BOLD], [bar(prog?.pct ?? 0, clamp(W - 18, 4, 30)), { color: 'green' }], [` ${fmtPct(prog?.pct ?? 0)}`, BOLD]]),
-        L('ce', [[effortTxt, DIM]]),
-      ],
-    }
-  }
   const cModels = (): CBlock => {
     const full = runCounts.map(x => `${MODEL_NAME[x.b]} ${x.n}`).join(' · ')
     const text = full.length <= W ? full : runCounts.map(x => `${MODEL_LETTER[x.b]} ${x.n}`).join(' · ')
@@ -607,7 +572,7 @@ export function renderPanel(els: Els, d: PanelData, o: PanelOpts): El {
     rows: [
       ...listItems.map(it => {
         if (it.kind === 'head') return L(`cli-${it.key}`, [[short(`${MODEL_NAME[it.b]} · ${it.n}`, W), { bold: true, color: MODEL_COLOR[it.b] }]])
-        const mark = it.status === 'main' ? `· ${MODEL_LETTER[it.b]} ` : ` ${ic[it.status]} `
+        const mark = it.status === 'main' ? `· ${MODEL_LETTER[it.b]} ` : `${branch(it.last)}${ic[it.status]} `
         return L(`cli-${it.key}`, [mark, effortSeg(it.effort), ' ', short(it.desc, W - mark.length - it.effort.length - 1)])
       }),
       ...(d.turnTasks.length === 0 ? [L('cl-none', [[short('Sin tareas en este turno', W), DIM]])] : []),
@@ -623,7 +588,7 @@ export function renderPanel(els: Els, d: PanelData, o: PanelOpts): El {
     const nodes: El[] = []
     const dropped: string[] = []
     let used = 0
-    for (const b of [...(prog !== null ? [cTask()] : []), cLimits(), cList(), ...(isLive ? [cModels()] : []), cUse()]) {
+    for (const b of [cLimits(), cList(), ...(isLive ? [cModels()] : []), cUse()]) {
       const left = room - used - 1
       const rows = left >= 1 ? takeRows(b.rows, left) : []
       if (rows.length === 0 || (rows.length < b.rows.length && !b.partial)) {

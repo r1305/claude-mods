@@ -362,6 +362,13 @@ export const register: Register = on => {
   on('turn.step', async function* ($, e, next) {
     const result = yield* next(e)
     const level = e.effort
+    if (e.agentId !== undefined) {
+      const id = e.agentId
+      try {
+        await update($, tasks, list => list.map(t => (t.id === id && t.status === 'running' ? { ...t, steps: (t.steps ?? 0) + 1 } : t)))
+        $.ui.invalidate('ui.render')
+      } catch {}
+    }
     if (typeof level === 'string') {
       try {
         if (e.agentId === undefined) {

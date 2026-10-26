@@ -38,5 +38,7 @@ export const progressOf = (tasks: readonly ModelRouterTask[], run: number): RunP
   if (mine.length === 0) return null
   const running = mine.filter(t => t.status === 'running').length
   const done = mine.length - running
-  return { total: mine.length, done, running, pct: Math.round((done / mine.length) * 100) }
+  // heuristic: a running task is worth 10 % per turn.step seen, capped at 90 %; finished = 100 %; total = mean
+  const sum = mine.reduce((s, t) => s + (t.status === 'running' ? Math.min(90, (t.steps ?? 0) * 10) : 100), 0)
+  return { total: mine.length, done, running, pct: Math.round(sum / mine.length) }
 }

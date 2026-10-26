@@ -20,6 +20,8 @@ export type ModelRouterTask = {
   durationMs?: number
   /** summed from the subagent's turn.complete usage */
   tokens?: number
+  /** turn.step events seen so far; feeds the live progress estimate */
+  steps?: number
   /** effort the subagent runs at, from its turn.step (low, medium, high, xhigh, max) */
   effort?: string
   /** sequence number of the user turn that spawned it (turn.start); progress counts per turn */
