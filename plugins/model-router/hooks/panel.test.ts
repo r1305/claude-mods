@@ -224,16 +224,23 @@ test('resumen without limits and without tasks shows friendly empty states and n
   expect(text).not.toContain('Principal')
 })
 
-test('a new user turn restarts the task list', async ($, on) => {
+test('a new user turn restarts the task list, keeping only what still runs', async ($, on) => {
   world(on, { limits: LIMITS_OK })
   on('turn.start', (_$, e) => ({ turnId: e.turnId }) as never)
   await begin($)
   await $.agent.spawn(spawn('Buscar archivos de login'))
+  await $.agent.spawn(spawn('Integrar pagos con Stripe', 'integrar Stripe checkout'))
+  await $.turn.complete(complete('agent_1', 1200, 'claude-haiku-4-5'))
   await $.turn.start({ text: 'hola', turnId: 't2' } as never)
-  const text = await textOfPane(await $.ui.mount(pane()))
-  expect(text).toContain('Tareas del turno  0')
-  expect(text).toContain('Sin tareas en este turno')
+  const ui = await $.ui.mount(pane())
+  const text = await textOfPane(ui)
+  expect(text).toContain('Tareas del turno  1')
+  expect(text).toMatch(/Opus · 1\n└ » Integrar pagos con Stripe/)
   expect(text).not.toContain('Buscar archivos de login')
+  await $.turn.complete(complete('agent_2', 800, 'claude-opus-5-5'))
+  const idle = await textOfPane(ui)
+  expect(idle).toContain('Tareas del turno  0')
+  expect(idle).toContain('Sin tareas en este turno')
 })
 
 test('tokens pane: per family today and 7 days, and the session per exact model', async ($, on) => {

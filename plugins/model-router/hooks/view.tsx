@@ -122,7 +122,7 @@ const SVG_METER_H = 40
 const SVG_METER_ROWS = 2
 const SVG_CHIPS_H = 26
 
-type MeterIcon = 'task' | 'clock' | 'shield'
+type MeterIcon = 'task' | 'clock' | 'shield' | 'chart'
 const GRAD = { normal: ['ok', 'ok2'], aviso: ['wa', 'wa2'], critico: ['cr', 'cr2'], neon: ['n1', 'n2'] } as const
 const anim = (on: boolean, c: string) => (on ? c : '')
 
@@ -134,6 +134,8 @@ const iconSvg = (icon: MeterIcon, cls: string, isLive: boolean, isDone: boolean)
     return `<g class="${cls}" fill="none" stroke="currentColor"><circle class="${anim(isLive, 'spin')}" style="transform-origin:7px 8px" cx="7" cy="8" r="5.6" stroke-width="1.6" stroke-dasharray="5 2.6"/><circle class="${anim(isLive, 'live')}" cx="7" cy="8" r="2.2" fill="currentColor" stroke="none"/></g>`
   if (icon === 'clock')
     return `<g class="${cls}" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="7" cy="8" r="5.8"/><path d="M7 8V4.8"/><path class="spin slow" style="transform-origin:7px 8px" d="M7 8h3"/></g>`
+  if (icon === 'chart')
+    return `<g class="${cls}" fill="currentColor"><rect x="1.5" y="8" width="2.6" height="6" rx=".8" opacity=".55"/><rect class="${anim(isLive, 'live')}" x="5.7" y="4.5" width="2.6" height="9.5" rx=".8"/><rect x="9.9" y="2" width="2.6" height="12" rx=".8" opacity=".8"/></g>`
   return `<g class="${cls}"><path d="M7 1.6l5 1.9v4c0 3.1-2.1 5.2-5 6.4-2.9-1.2-5-3.3-5-6.4v-4z" fill="currentColor" fill-opacity=".18" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><circle class="${anim(isLive, 'live')}" cx="7" cy="8" r="1.8" fill="currentColor"/></g>`
 }
 
@@ -148,8 +150,9 @@ const meterSvg = (W: number, label: string, p: number, detail: string, lvl: 'nor
   const fw = v > 0 || (isLive && icon === 'task') ? Math.max(track, (v / 100) * W) : 0
   const fwS = fw.toFixed(1)
   const isTask = icon === 'task'
-  const g = isTask ? 'neon' : lvl
-  const cls = isTask ? 'neon' : `lv-${lvl}`
+  const isNeon = isTask || icon === 'chart'
+  const g = isNeon ? 'neon' : lvl
+  const cls = isNeon ? 'neon' : `lv-${lvl}`
   const isDone = isTask && v >= 100 && !isLive
   const isScan = isLive && fw > 0
   const clip = `c${fwS.replace('.', '_')}`
@@ -386,23 +389,46 @@ export function renderPanel(els: Els, d: PanelData, o: PanelOpts): El {
     },
   }
 
+  const maxWeek = Math.max(1, ...BUCKETS.map(b => d.agg.week[b]))
   const usageBlock: Block = {
     id: 'consumo',
-    build: inner => ({
-      title: [['Consumo', BOLD]],
-      body: [
-        P(
-          'mini',
-          [
-            ['Hoy ', DIM],
-            [fmtTokensLong(d.agg.today.total), BOLD],
-            ['  ·  7 días ', DIM],
-            [fmtTokensLong(d.agg.week.total), BOLD],
-          ],
-          inner,
-        ),
-      ],
-    }),
+    partial: true,
+    build: inner => {
+      const today = fmtTokensLong(d.agg.today.total)
+      const week = fmtTokensLong(d.agg.week.total)
+      const W = svgWidth(inner)
+      const head: Row =
+        Svg !== null
+          ? {
+              h: SVG_METER_ROWS,
+              el: (
+                <Svg
+                  key="use-sum"
+                  source={meterSvg(W, `Hoy ${today}`, pct(d.agg.today.total, d.agg.week.total), `7 días ${week}`, 'normal', isLive, 'chart')}
+                  alt={`Hoy ${today} · 7 días ${week}`}
+                  width={W}
+                  height={SVG_METER_H}
+                />
+              ),
+            }
+          : P('mini', [['Hoy ', DIM], [today, BOLD], ['  ·  7 días ', DIM], [week, BOLD]], inner)
+      const fams = BUCKETS.map((b): Row => {
+        const p = (d.agg.week[b] / maxWeek) * 100
+        if (Svg !== null) {
+          const detail = `hoy ${fmtTokensLong(d.agg.today[b])} · 7 días ${fmtTokensLong(d.agg.week[b])}`
+          return { h: 2, el: <Svg key={`use-${b}`} source={familySvg(W, b, detail, p)} alt={`${MODEL_NAME[b]}: ${detail}`} width={W} height={32} /> }
+        }
+        const detail = `hoy ${fmtTokensTiny(d.agg.today[b])} · 7d ${fmtTokensTiny(d.agg.week[b])}`
+        const barW = inner - 9 - 2 - detail.length
+        return L(`use-${b}`, [
+          dot(b),
+          [MODEL_NAME[b].padEnd(7), { bold: true, color: MODEL_COLOR[b] }],
+          ...(barW >= 4 ? ([[bar(p, Math.min(barW, 20)), { color: MODEL_COLOR[b] }], ' '] as Seg[]) : []),
+          [detail, DIM],
+        ])
+      })
+      return { title: [['Consumo', BOLD]], body: [head, ...fams] }
+    },
   }
 
   type ListItem =
@@ -568,7 +594,19 @@ export function renderPanel(els: Els, d: PanelData, o: PanelOpts): El {
     id: 'c-use',
     name: 'consumo',
     title: 'Consumo',
-    rows: [L('cu', [['Hoy ', DIM], [fmtTokensTiny(d.agg.today.total), BOLD], [' · 7d ', DIM], [fmtTokensTiny(d.agg.week.total), BOLD]])],
+    partial: true,
+    rows: [
+      L('cu', [['Hoy ', DIM], [fmtTokensTiny(d.agg.today.total), BOLD], [' · 7d ', DIM], [fmtTokensTiny(d.agg.week.total), BOLD]]),
+      ...BUCKETS.map(b => {
+        const txt = `${fmtTokensTiny(d.agg.today[b])}/${fmtTokensTiny(d.agg.week[b])}`
+        const barW = W - 2 - 1 - txt.length
+        return L(`cu-${b}`, [
+          [`${MODEL_LETTER[b]} `, { bold: true, color: MODEL_COLOR[b] }],
+          ...(barW >= 3 ? ([[bar((d.agg.week[b] / maxWeek) * 100, Math.min(barW, 20)), { color: MODEL_COLOR[b] }], ' '] as Seg[]) : []),
+          [short(txt, W - 2), DIM],
+        ])
+      }),
+    ],
   })
   const cPlace = (room: number) => {
     const nodes: El[] = []

@@ -5,7 +5,7 @@ export type RunProgress = { total: number; done: number; running: number; pct: n
 /** Subagents of the user turn `run`: running first, then in spawn order. */
 export const turnTasks = (tasks: readonly ModelRouterTask[], run: number): ModelRouterTask[] =>
   tasks
-    .filter(t => t.run === run)
+    .filter(t => t.run === run || t.status === 'running')
     .sort((a, b) => Number(b.status === 'running') - Number(a.status === 'running') || a.startedAt - b.startedAt)
 
 const GROUP_ORDER: ModelRouterLevel[] = ['opus', 'sonnet', 'haiku']
@@ -33,12 +33,13 @@ export const EFFORT_COLOR: Record<EffortTone, { color: string; css: string }> = 
  * sequence number). A subagent counts as done once it leaves `running`, error included.
  * Null when that turn has spawned none, so the bar stays hidden.
  */
-export const progressOf = (tasks: readonly ModelRouterTask[], run: number): RunProgress | null => {
+export const progressOf = (tasks: readonly ModelRouterTask[], run: number, now?: number): RunProgress | null => {
   const mine = tasks.filter(t => t.run === run)
   if (mine.length === 0) return null
   const running = mine.filter(t => t.status === 'running').length
   const done = mine.length - running
-  // heuristic: a running task is worth 10 % per turn.step seen, capped at 90 %; finished = 100 %; total = mean
-  const sum = mine.reduce((s, t) => s + (t.status === 'running' ? Math.min(90, (t.steps ?? 0) * 10) : 100), 0)
+  // heuristic: running = max(10 % per turn.step seen, 1 % per 2 s since startedAt), capped at 90 %; finished = 100 %; total = mean
+  const live = (t: ModelRouterTask) => Math.min(90, Math.max((t.steps ?? 0) * 10, now !== undefined ? Math.floor((now - t.startedAt) / 2000) : 0))
+  const sum = mine.reduce((s, t) => s + (t.status === 'running' ? live(t) : 100), 0)
   return { total: mine.length, done, running, pct: Math.round(sum / mine.length) }
 }

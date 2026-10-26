@@ -35,10 +35,19 @@ test('progressOf heuristic: running task counts 10 % per step, capped at 90 %', 
   expect(progressOf([run('a', 2, 5), task('b', 2, 'done')], 1)).toBeNull()
 })
 
-test('turnTasks: only the current turn, running first, then in spawn order', () => {
-  const tasks = [task('a', 2, 'done', 1), task('b', 1, 'running', 2), task('c', 2, 'running', 3), task('d', 2, 'error', 0), task('e', 2, 'running', 2)]
-  expect(turnTasks(tasks, 2).map(t => t.id)).toEqual(['e', 'c', 'd', 'a'])
-  expect(turnTasks(tasks, 3)).toEqual([])
+test('progressOf with now: a running task advances with elapsed time when no step arrives, capped at 90 %', () => {
+  const t = (startedAt: number, steps?: number): ModelRouterTask => ({ ...task('a', 1, 'running', startedAt), ...(steps !== undefined ? { steps } : {}) })
+  expect(progressOf([t(0)], 1, 0)?.pct).toBe(0)
+  expect(progressOf([t(0)], 1, 60_000)?.pct).toBe(30)
+  expect(progressOf([t(0, 5)], 1, 20_000)?.pct).toBe(50)
+  expect(progressOf([t(0)], 1, 3_600_000)?.pct).toBe(90)
+  expect(progressOf([t(0)], 1)?.pct).toBe(0)
+})
+
+test('turnTasks: the current turn plus anything still running, running first, then in spawn order', () => {
+  const tasks = [task('a', 2, 'done', 1), task('b', 1, 'running', 2), task('c', 2, 'running', 3), task('d', 2, 'error', 0), task('e', 2, 'running', 2), task('f', 1, 'done', 0)]
+  expect(turnTasks(tasks, 2).map(t => t.id)).toEqual(['b', 'e', 'c', 'd', 'a'])
+  expect(turnTasks(tasks, 3).map(t => t.id)).toEqual(['b', 'e', 'c'])
 })
 
 test('modelRows: session tokens per exact model, largest first, empty rows dropped', () => {
