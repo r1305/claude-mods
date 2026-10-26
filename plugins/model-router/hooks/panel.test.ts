@@ -248,7 +248,7 @@ test('desktop surface draws emoji and animated SVG meters when the engine offers
   expect(dJson).toContain('Haiku')
   if (dJson.includes('<svg')) {
     expect(dJson).toContain('prefers-reduced-motion')
-    expect(dJson).toContain('prefers-color-scheme: dark')
+    expect(dJson).toContain('prefers-color-scheme: light')
     expect(dJson).toContain('class=\\"live')
   }
   const term = await textOfPane(await $.ui.mount(pane()))

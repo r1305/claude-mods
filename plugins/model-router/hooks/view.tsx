@@ -81,19 +81,25 @@ const takeRows = (rows: Row[], cap: number) => {
 const sumH = (rows: Row[]) => rows.reduce((s, r) => s + r.h, 0)
 
 // Desktop drawings: each meter / chip row is one SVG, as savvy-progress draws its rows.
-// Pure CSS animation (compositor, no redraws): the fill grows once, `.live` pulses while
-// subagents run. Light by default, dark under prefers-color-scheme, still under
-// prefers-reduced-motion. Other surfaces never reach these strings.
+// Pure CSS animation (compositor, no redraws): the fill grows once, icons spin and the track
+// shimmers while subagents run, the task bar pulses at 100 %. Dark by default, light under
+// prefers-color-scheme, still under prefers-reduced-motion. Other surfaces never reach these strings.
 const FONT = "system-ui, -apple-system, 'Segoe UI', sans-serif"
 const PANE_CSS = `<style>
-.t{fill:#1f1f1f}.s{fill:#6b6b68}.k{fill:#ecebe8}
-.lv-normal{fill:#2e9d5b}.lv-aviso{fill:#c98a0a}.lv-critico{fill:#d64545}
-.m-haiku{fill:#2e9d5b}.m-sonnet{fill:#3b82f6}.m-opus{fill:#a855f7}
-@media (prefers-color-scheme: dark){.t{fill:#ececec}.s{fill:#a8a8a4}.k{fill:#2c2c2b}.lv-normal{fill:#4ac17d}.lv-aviso{fill:#f0bb3c}.lv-critico{fill:#f06a6a}.m-haiku{fill:#4ac17d}.m-sonnet{fill:#6aa5f8}.m-opus{fill:#c084fc}}
+svg{--t:#e8ecf4;--s:#8b93a7;--k:#1a2030;--bg:#0d111b;--ok:#34d399;--ok2:#a7f3d0;--wa:#fbbf24;--wa2:#fde68a;--cr:#f87171;--cr2:#fecaca;--n1:#22d3ee;--n2:#c084fc;--hk:#4ade80;--sn:#60a5fa;--op:#c084fc;--ot:#9ca3af}
+@media (prefers-color-scheme: light){svg{--t:#1f1f1f;--s:#6b6b68;--k:#e4e7ee;--bg:#fff;--ok:#2e9d5b;--ok2:#4ac17d;--wa:#c98a0a;--wa2:#f0bb3c;--cr:#d64545;--cr2:#f06a6a;--n1:#0891b2;--n2:#7c3aed;--hk:#2e9d5b;--sn:#3b82f6;--op:#a855f7;--ot:#6b7280}}
+.t{fill:var(--t)}.s{fill:var(--s)}.k{fill:var(--k)}.tick{fill:var(--bg)}.cf{fill:currentColor}
+.lv-normal{color:var(--ok)}.lv-aviso{color:var(--wa)}.lv-critico{color:var(--cr)}.neon{color:var(--n1)}
+.m-haiku{color:var(--hk)}.m-sonnet{color:var(--sn)}.m-opus{color:var(--op)}.m-other{color:var(--ot)}
+.glow{filter:drop-shadow(0 0 2.5px currentColor)}
 .fill{transform-box:fill-box;transform-origin:left center;animation:grow .7s ease-out both}
-@keyframes grow{from{transform:scaleX(0)}}
+.fill.done{animation:grow .7s ease-out both,pulse 1.1s ease-in-out .7s 3}
+@keyframes grow{from{transform:scaleX(0)}}@keyframes pulse{50%{filter:drop-shadow(0 0 7px currentColor)}}
 .live{animation:p 1.6s ease-in-out infinite}@keyframes p{50%{opacity:.3}}
-@media (prefers-reduced-motion: reduce){.fill,.live{animation:none}}
+.spin{transform-box:view-box;animation:r 1.4s linear infinite}.slow{animation-duration:6s}@keyframes r{to{transform:rotate(360deg)}}
+.scan{animation:sc 1.5s linear infinite}@keyframes sc{to{transform:translateX(var(--d))}}
+.draw{stroke-dasharray:11;animation:dr .6s ease-out both}@keyframes dr{from{stroke-dashoffset:11}}
+@media (prefers-reduced-motion: reduce){svg *{animation:none!important}}
 </style>`
 
 const xml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
@@ -101,35 +107,90 @@ const svgDoc = (W: number, H: number, body: string) =>
   `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${PANE_CSS}${body}</svg>`
 
 /** About 8 CSS px per reported column; the card chrome is already out of `inner`. */
+/** Terminal mark of the task: ◉ while subagents run, ✓ once all are done. */
+const taskMark = (p: RunProgress) => (p.running > 0 ? '◉' : '✓')
+
 const svgWidth = (inner: number) => clamp(inner * 8 - 8, 160, 700)
 const SVG_METER_H = 40
 const SVG_METER_ROWS = 2
 const SVG_CHIPS_H = 26
 
-const meterSvg = (W: number, label: string, p: number, detail: string, lvl: 'normal' | 'aviso' | 'critico', isLive: boolean): string => {
+type MeterIcon = 'task' | 'clock' | 'shield'
+const GRAD = { normal: ['ok', 'ok2'], aviso: ['wa', 'wa2'], critico: ['cr', 'cr2'], neon: ['n1', 'n2'] } as const
+const anim = (on: boolean, c: string) => (on ? c : '')
+
+/** 14 px icon centred at (7, 8): a spinning core while the task runs and a check once done, a clock or a shield for limits. */
+const iconSvg = (icon: MeterIcon, cls: string, isLive: boolean, isDone: boolean): string => {
+  if (icon === 'task' && isDone)
+    return `<g class="${cls}"><circle cx="7" cy="8" r="6.5" fill="currentColor" opacity=".2"/><path class="draw" d="M3.8 8.3l2.2 2.2 4.4-4.8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></g>`
+  if (icon === 'task')
+    return `<g class="${cls}" fill="none" stroke="currentColor"><circle class="${anim(isLive, 'spin')}" style="transform-origin:7px 8px" cx="7" cy="8" r="5.6" stroke-width="1.6" stroke-dasharray="5 2.6"/><circle class="${anim(isLive, 'live')}" cx="7" cy="8" r="2.2" fill="currentColor" stroke="none"/></g>`
+  if (icon === 'clock')
+    return `<g class="${cls}" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="7" cy="8" r="5.8"/><path d="M7 8V4.8"/><path class="spin slow" style="transform-origin:7px 8px" d="M7 8h3"/></g>`
+  return `<g class="${cls}"><path d="M7 1.6l5 1.9v4c0 3.1-2.1 5.2-5 6.4-2.9-1.2-5-3.3-5-6.4v-4z" fill="currentColor" fill-opacity=".18" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><circle class="${anim(isLive, 'live')}" cx="7" cy="8" r="1.8" fill="currentColor"/></g>`
+}
+
+/**
+ * One meter: icon, label and figure, a neon-gradient bar on a glowing track, and the detail line.
+ * `segs` > 0 is the task bar: one segment per subagent, a radar by the effort, a shimmer while
+ * subagents run and a pulse at 100 %.
+ */
+const meterSvg = (W: number, label: string, p: number, detail: string, lvl: 'normal' | 'aviso' | 'critico', isLive: boolean, icon: MeterIcon, segs = 0): string => {
   const v = clamp(p, 0, 100)
   const track = 7
   const fw = v > 0 ? Math.max(track, (v / 100) * W) : 0
-  const cls = `lv-${lvl}`
-  const shape = (c: string, extra = '') =>
-    fw > 0 ? `<rect class="${c}" ${extra}x="0" y="19" width="${fw.toFixed(1)}" height="${track}" rx="${track / 2}"/>` : ''
+  const fwS = fw.toFixed(1)
+  const isTask = icon === 'task'
+  const g = isTask ? 'neon' : lvl
+  const cls = isTask ? 'neon' : `lv-${lvl}`
+  const isDone = isTask && v >= 100 && !isLive
+  const isScan = isLive && fw > 0
+  const clip = `c${fwS.replace('.', '_')}`
+  const [a, b] = GRAD[g]
+  const defs = `<defs><linearGradient id="g-${g}"><stop offset="0" style="stop-color:var(--${a})"/><stop offset="1" style="stop-color:var(--${b})"/></linearGradient>${
+    isScan
+      ? `<linearGradient id="sh"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".5" stop-color="#fff" stop-opacity=".7"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient><clipPath id="${clip}"><rect x="0" y="19" width="${fwS}" height="${track}" rx="${track / 2}"/></clipPath>`
+      : ''
+  }</defs>`
+  const step = segs > 0 ? W / segs : 0
+  const ticks =
+    step >= 6
+      ? Array.from({ length: segs - 1 }, (_, i) => `<rect class="tick" x="${((i + 1) * step - 0.75).toFixed(1)}" y="19" width="1.5" height="${track}"/>`).join('')
+      : ''
+  const radar = isTask
+    ? `<g class="neon" fill="none" stroke="currentColor" stroke-width="1"><circle cx="5" cy="33" r="4.2" opacity=".6"/><circle cx="5" cy="33" r="1.4"/><path class="${anim(isLive, 'spin')}" style="transform-origin:5px 33px" d="M5 33l3-3" stroke-width="1.3" stroke-linecap="round"/></g>`
+    : ''
   return svgDoc(
     W,
     SVG_METER_H,
-    `<text class="t" x="0" y="13" font-family="${FONT}" font-size="12" font-weight="600">${xml(label)}</text>
-<text class="${cls}" x="${W}" y="13" text-anchor="end" font-family="${FONT}" font-size="13" font-weight="700" font-variant-numeric="tabular-nums">${xml(fmtPct(p))}</text>
-<rect class="k" x="0" y="19" width="${W}" height="${track}" rx="${track / 2}"/>
-${shape(`fill ${cls}`)}${isLive ? shape('live', 'fill="#fff" opacity=".45" ') : ''}
-<text class="s" x="0" y="37" font-family="${FONT}" font-size="10.5">${xml(detail)}</text>
-${lvl !== 'normal' ? `<text class="${cls}" x="${W}" y="37" text-anchor="end" font-family="${FONT}" font-size="10.5" font-weight="700">${xml(LEVEL_NAME[lvl])}</text>` : ''}`,
+    `${defs}${iconSvg(icon, cls, isLive, isDone)}
+<text class="t" x="18" y="13" font-family="${FONT}" font-size="12" font-weight="600">${xml(label)}</text>
+<text class="cf ${cls}" x="${W}" y="13" text-anchor="end" font-family="${FONT}" font-size="13" font-weight="700" font-variant-numeric="tabular-nums">${xml(fmtPct(p))}</text>
+<g class="${cls}"><rect class="k" x="0.5" y="19" width="${W - 1}" height="${track}" rx="${track / 2}" stroke="currentColor" stroke-opacity=".35"/>
+${fw > 0 ? `<rect class="fill glow${isDone ? ' done' : ''}" fill="url(#g-${g})" x="0" y="19" width="${fwS}" height="${track}" rx="${track / 2}"/>` : ''}
+${isScan ? `<g clip-path="url(#${clip})"><rect class="scan" style="--d:${(fw + 36).toFixed(1)}px" x="-36" y="19" width="36" height="${track}" fill="url(#sh)"/></g>` : ''}${ticks}</g>
+${radar}<text class="s" x="${isTask ? 13 : 0}" y="37" font-family="${FONT}" font-size="10.5">${xml(detail)}</text>
+${lvl !== 'normal' ? `<text class="cf ${cls}" x="${W}" y="37" text-anchor="end" font-family="${FONT}" font-size="10.5" font-weight="700">${xml(LEVEL_NAME[lvl])}</text>` : ''}`,
   )
+}
+
+/** Model glyph centred at (cx, 13) inside a spinning dashed ring: dot for haiku, diamond for sonnet, hexagon for opus. */
+const modelGlyph = (b: ModelRouterBucket, cx: number) => {
+  const hex = Array.from({ length: 6 }, (_, i) => `${(cx + 4.2 * Math.cos((Math.PI / 3) * i - Math.PI / 2)).toFixed(1)},${(13 + 4.2 * Math.sin((Math.PI / 3) * i - Math.PI / 2)).toFixed(1)}`).join(' ')
+  const core =
+    b === 'sonnet'
+      ? `<path d="M${cx} 8.8l4.2 4.2-4.2 4.2-4.2-4.2z"/>`
+      : b === 'opus'
+        ? `<polygon points="${hex}"/>`
+        : `<circle cx="${cx}" cy="13" r="3.2"/>`
+  return `<g class="live m-${b}" fill="currentColor">${core}</g><circle class="spin m-${b}" style="transform-origin:${cx}px 13px" cx="${cx}" cy="13" r="6.4" fill="none" stroke="currentColor" stroke-width="1" stroke-dasharray="3 2.2"/>`
 }
 
 const chipsSvg = (W: number, items: { b: ModelRouterBucket; text: string }[]): string => {
   let x = 0
   const parts = items.map(it => {
     const w = 22 + it.text.length * 6.8
-    const out = `<circle class="live m-${it.b}" cx="${x + 7}" cy="13" r="5"/><text class="t" x="${x + 18}" y="17" font-family="${FONT}" font-size="12" font-weight="600">${xml(it.text)}</text>`
+    const out = `${modelGlyph(it.b, x + 7)}<text class="t" x="${x + 18}" y="17" font-family="${FONT}" font-size="12" font-weight="600">${xml(it.text)}</text>`
     x += w + 8
     return out
   })
@@ -229,7 +290,7 @@ export function renderPanel(els: Els, d: PanelData, o: PanelOpts): El {
         el: (
           <Svg
             key={`lim-${kind}`}
-            source={meterSvg(W, limitLabel(kind), p, detail, lvl, isLive)}
+            source={meterSvg(W, limitLabel(kind), p, detail, lvl, isLive, kind === 'five_hour' ? 'clock' : 'shield')}
             alt={`${limitLabel(kind)}: ${fmtPct(p)}${detail !== '' ? `, ${detail}` : ''}${lvl !== 'normal' ? `, ${LEVEL_NAME[lvl]}` : ''}`}
             width={W}
             height={SVG_METER_H}
@@ -317,14 +378,14 @@ export function renderPanel(els: Els, d: PanelData, o: PanelOpts): El {
                     el: (
                       <Svg
                         key="tarea"
-                        source={meterSvg(svgWidth(inner), label, prog.pct, effortTxt, 'normal', prog.running > 0)}
+                        source={meterSvg(svgWidth(inner), label, prog.pct, effortTxt, 'normal', prog.running > 0, 'task', prog.total)}
                         alt={`${label}, ${fmtPct(prog.pct)}, ${effortTxt}`}
                         width={svgWidth(inner)}
                         height={SVG_METER_H}
                       />
                     ),
                   }
-                : meter('tarea', label, prog.pct, effortTxt, inner)
+                : meter('tarea', `${taskMark(prog)} ${label}`, prog.pct, effortTxt, inner)
             return { title: [['Tarea en curso', BOLD]], body: [row] }
           },
         }
@@ -424,13 +485,13 @@ export function renderPanel(els: Els, d: PanelData, o: PanelOpts): El {
     return { id: 'c-lim', name: 'límites', title: 'Límites', rows, partial: true }
   }
   const cTask = (): CBlock => {
-    const label = prog !== null ? `${prog.done}/${prog.total}` : ''
+    const label = prog !== null ? `${taskMark(prog)} ${prog.done}/${prog.total}` : ''
     return {
       id: 'c-task',
       name: 'tarea',
       title: 'Tarea en curso',
       rows: [
-        L('ct', [[`${label} `, BOLD], [bar(prog?.pct ?? 0, clamp(W - 16, 4, 30)), { color: 'green' }], [` ${fmtPct(prog?.pct ?? 0)}`, BOLD]]),
+        L('ct', [[`${label} `, BOLD], [bar(prog?.pct ?? 0, clamp(W - 18, 4, 30)), { color: 'green' }], [` ${fmtPct(prog?.pct ?? 0)}`, BOLD]]),
         L('ce', [[effortTxt, DIM]]),
       ],
     }
@@ -544,7 +605,7 @@ export function renderProgressBar(els: Els, o: ProgressOpts): El {
     return (
       <Box flexDirection="column">
         <Svg
-          source={meterSvg(width, label, p.pct, effortTxt, 'normal', p.running > 0)}
+          source={meterSvg(width, label, p.pct, effortTxt, 'normal', p.running > 0, 'task', p.total)}
           alt={`${label}, ${fmtPct(p.pct)}, ${effortTxt}`}
           width={width}
           height={SVG_METER_H}
@@ -557,7 +618,7 @@ export function renderProgressBar(els: Els, o: ProgressOpts): El {
   return (
     <Box flexDirection="column">
       <Box flexDirection="row" gap={2}>
-        <Text bold>{label}</Text>
+        <Text bold>{`${taskMark(p)} ${label}`}</Text>
         <Text color="green">{bar(p.pct, width)}</Text>
         <Text bold>{fmtPct(p.pct)}</Text>
         <Text dimColor>{effortTxt}</Text>

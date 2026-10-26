@@ -1,13 +1,13 @@
 # Model router
 
-Mod de Claude Code (0.8.0) para Claude Desktop (pestaña Code) y terminal.
+Mod de Claude Code (0.9.0) para Claude Desktop (pestaña Code) y terminal.
 
 Elige el modelo (haiku, sonnet u opus) de cada subagente según una tabla de suelos por agente, la complejidad de la tarea y los límites de uso de la cuenta. Muestra un único panel de cuotas y consumo: límites de 5 h y semanal, alertas, tokens por modelo y consumo por día y por sesión.
 
 ## Qué hace
 
 - **Enrutado de subagentes**: reescribe el `model` de cada llamada Agent (salvo forks y agentes de flujo). Con uso alto baja un escalón; con uso crítico, todo a haiku salvo los suelos.
-- **Panel único y mínimo** (pane `model-router`), sin pestañas: estado del enrutado (Activo/Pausado y botón), semáforo, medidores de 5 h y semanal con «se reinicia en», un resumen de una línea con el modelo elegido para los subagentes en curso y el consumo de hoy y 7 días. Lo que ya muestra savvy-progress (plan, costo, contexto, tiempo por agente) no se repite. En el escritorio los medidores son barras SVG animadas (pulso mientras hay subagentes en curso, modo oscuro y `prefers-reduced-motion`); en terminal, barras de texto. El detalle de consumo (tokens por modelo exacto, por día, por sesión) está en `/quota`.
+- **Panel único y mínimo** (pane `model-router`), sin pestañas: estado del enrutado (Activo/Pausado y botón), semáforo, medidores de 5 h y semanal con «se reinicia en», un resumen de una línea con el modelo elegido para los subagentes en curso y el consumo de hoy y 7 días. Lo que ya muestra savvy-progress (plan, costo, contexto, tiempo por agente) no se repite. En el escritorio los medidores son barras SVG animadas de estilo neón: íconos animados (núcleo girando y check al terminar, reloj y escudo en límites, radar de esfuerzo, glifo por modelo), barra de tarea con un segmento por subagente, escaneo mientras corren y pulso al 100 %, modo oscuro por defecto y `prefers-reduced-motion`; en terminal, barras de texto con ◉/✓. El detalle de consumo (tokens por modelo exacto, por día, por sesión) está en `/quota`.
 - **Semáforo de niveles** con dos umbrales configurables, 80 % (aviso) y 90 % (crítico). Es el mismo para el panel, la línea de estado, el texto de uso y el enrutado.
 - **Alertas** con aviso emergente al cruzar cada umbral, una vez por umbral y ventana.
 - **Tokens por modelo** de la sesión, por nombre exacto de modelo, con entrada, salida y caché de lectura y escritura por separado.
@@ -75,7 +75,7 @@ Las cifras cubren los turnos vistos desde que empezó la sesión; no se reconstr
 
 ## Estructura
 
-- `.claude-plugin/plugin.json`: manifiesto, versión 0.8.0, contrato de estado en `types/index.d.ts`.
+- `.claude-plugin/plugin.json`: manifiesto, versión 0.9.0, contrato de estado en `types/index.d.ts`.
 - `hooks/hooks.json`: módulo de hooks `./register.tsx`.
 - `hooks/register.tsx`: hooks y cableado (`session.start`, `session.measure`, `turn.complete`, `agent.spawn`, `command.run` de `/model-router` y `/quota`, `ui.render` del pane `model-router`, `prompt.compose`).
 - `hooks/quota.ts`: lógica pura de límites, umbrales, alertas, preferencias, tokens por modelo y comandos.

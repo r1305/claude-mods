@@ -1,6 +1,6 @@
 {
   "name": "model-router",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "Middleware que elige el modelo (haiku/sonnet/opus) de todo subagente segun tabla de suelos por agente, complejidad de la tarea y limites de uso de la cuenta, y un unico panel de cuotas y consumo: limites de 5 h y semanal, alertas a umbrales configurables (80 % y 90 % por defecto), tokens por modelo y consumo por dia/sesion (/model-router usage, /quota).",
   "author": { "name": "r1305" },
   "repository": "https://github.com/r1305/claude-mods",
