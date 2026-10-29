@@ -3,7 +3,7 @@ import { STRONG, classify, classifyDefault, head } from './classify'
 import { DEFAULT_PREFS } from './quota'
 import type { Thresholds } from './quota'
 
-export const LEVELS: ModelRouterLevel[] = ['haiku', 'sonnet', 'opus']
+export const LEVELS: ModelRouterLevel[] = ['haiku', 'sonnet', 'opus', 'fable']
 
 const rank = (l: ModelRouterLevel) => LEVELS.indexOf(l)
 const at = (i: number): ModelRouterLevel => LEVELS[Math.max(0, Math.min(LEVELS.length - 1, i))] ?? 'sonnet'
@@ -26,12 +26,12 @@ const byClass = (base: ModelRouterLevel): Pick => (d, p) => shift(base, classify
 const intro = (d: string, p: string) => `${d}\n${head(p)}`
 
 export const RULES: Record<string, AgentRule> = {
-  dev: { base: 'sonnet', floor: 'haiku', ceiling: 'opus', pick: byClass('sonnet') },
+  dev: { base: 'sonnet', floor: 'haiku', ceiling: 'fable', pick: byClass('sonnet') },
   qa: {
     base: 'haiku',
     floor: 'haiku',
     ceiling: 'sonnet',
-    pick: (d, p) => (QA_UP.test(intro(d, p)) || classify(d, p) === 'opus' ? 'sonnet' : 'haiku'),
+    pick: (d, p) => (QA_UP.test(intro(d, p)) || rank(classify(d, p)) >= rank('opus') ? 'sonnet' : 'haiku'),
   },
   review: { base: 'opus', floor: 'sonnet', ceiling: 'opus', pick: byClass('opus') },
   explorer: {
@@ -53,18 +53,22 @@ export const DEFAULT_RULE: AgentRule = { base: 'haiku', floor: 'haiku', ceiling:
 
 export const ruleFor = (subagentType: string) => RULES[subagentType.trim().toLowerCase()] ?? DEFAULT_RULE
 
-export type UsageState = { hasData: boolean; general: number; opusWeekly: number | undefined }
+export type UsageState = { hasData: boolean; general: number; opusWeekly: number | undefined; fableWeekly?: number }
 
 const GENERAL_KINDS = new Set(['five_hour', 'seven_day'])
+
+const maxOf = (list: readonly ModelRouterLimit[]) => (list.length > 0 ? list.reduce((m, l) => Math.max(m, l.percentUsed), 0) : undefined)
 
 export function usageState(limits: readonly ModelRouterLimit[] | undefined): UsageState {
   const list = limits ?? []
   const general = list.filter(l => GENERAL_KINDS.has(l.kind))
   const opus = list.filter(l => /opus/i.test(l.kind))
+  const fable = list.filter(l => /fable/i.test(l.kind))
   return {
-    hasData: general.length > 0 || opus.length > 0,
-    general: general.reduce((m, l) => Math.max(m, l.percentUsed), 0),
-    opusWeekly: opus.length > 0 ? opus.reduce((m, l) => Math.max(m, l.percentUsed), 0) : undefined,
+    hasData: general.length > 0 || opus.length > 0 || fable.length > 0,
+    general: maxOf(general) ?? 0,
+    opusWeekly: maxOf(opus),
+    ...(fable.length > 0 ? { fableWeekly: maxOf(fable) } : {}),
   }
 }
 
@@ -78,6 +82,10 @@ export function applyUsage(level: ModelRouterLevel, floor: ModelRouterLevel, u: 
     } else if (u.general >= th.warn) {
       out = at(Math.max(rank(floor), rank(level) - 1))
       if (out !== level) notes.push(`uso ${Math.round(u.general)} % → un escalón menos`)
+    }
+    if (u.fableWeekly !== undefined && u.fableWeekly >= th.warn && out === 'fable') {
+      out = 'opus'
+      notes.push(`fable semanal ${Math.round(u.fableWeekly)} % → sin fable`)
     }
     if (u.opusWeekly !== undefined && u.opusWeekly >= th.warn && out === 'opus') {
       out = 'sonnet'

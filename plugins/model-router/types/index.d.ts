@@ -1,4 +1,4 @@
-export type ModelRouterLevel = 'haiku' | 'sonnet' | 'opus'
+export type ModelRouterLevel = 'haiku' | 'sonnet' | 'opus' | 'fable'
 
 export type ModelRouterTask = {
   /** agentId of the started subagent, or a unique id for a refused spawn */
@@ -28,7 +28,7 @@ export type ModelRouterTask = {
   run?: number
 }
 
-export type ModelRouterBucket = ModelRouterLevel | 'other'
+export type ModelRouterBucket = 'haiku' | 'sonnet' | 'opus' | 'other'
 
 /** tokens counted per model bucket for one local day (input + output + cache) */
 export type ModelRouterDay = Record<ModelRouterBucket, number> & { total: number }

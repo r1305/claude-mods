@@ -485,7 +485,7 @@ export const textSummary = (i: TextSummaryInput) => {
   const running = i.running ?? []
   if (running.length === 0) lines.push('  Nada en curso.')
   for (const t of running.slice(0, 6)) {
-    lines.push(`  ${MODEL_NAME[t.model]} · ${t.description || '(sin descripción)'} · ${fmtDur(Math.max(0, i.now - t.startedAt))}`)
+    lines.push(`  ${MODEL_NAME[bucketOf(t.model)]} · ${t.description || '(sin descripción)'} · ${fmtDur(Math.max(0, i.now - t.startedAt))}`)
   }
   if (running.length > 6) lines.push(`  … y ${running.length - 6} más`)
   lines.push('')

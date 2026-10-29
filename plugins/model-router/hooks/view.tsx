@@ -9,6 +9,7 @@ import {
   MODEL_LETTER,
   MODEL_NAME,
   bar,
+  bucketOf,
   clamp,
   fmtPct,
   fmtReset,
@@ -346,8 +347,8 @@ export function renderPanel(els: Els, d: PanelData, o: PanelOpts): El {
 
   const running = d.tasks.filter(t => t.status === 'running')
   const isLive = running.length > 0
-  const MODEL_ORDER = ['opus', 'sonnet', 'haiku'] as const
-  const runCounts = MODEL_ORDER.map(b => ({ b, n: running.filter(t => t.model === b).length })).filter(x => x.n > 0)
+  const MODEL_ORDER = ['opus', 'sonnet', 'haiku', 'other'] as const
+  const runCounts = MODEL_ORDER.map(b => ({ b, n: running.filter(t => bucketOf(t.model) === b).length })).filter(x => x.n > 0)
 
   const lim = planLimits(d.limits)
   const hd = health(d.limits, d.prefs)

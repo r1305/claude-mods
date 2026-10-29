@@ -18,6 +18,35 @@ test('classify: complex work goes to opus', () => {
   expect(classify('Login', 'implementa el cambio de contraseña con JWT')).toBe('opus')
 })
 
+test('classify: GOAT tier (fable) needs an escalation or two hard signals in the intro', () => {
+  expect(classify('Rediseño multiarchivo de pagos', 'rediseña la arquitectura de pagos en varios módulos')).toBe('fable')
+  expect(classify('Bug de sesión', 'el login sigue fallando tras dos intentos de fix')).toBe('fable')
+  expect(classify('Pagos en BD prod', 'corrige el cobro duplicado en la BD prod')).toBe('fable')
+  expect(classify('Refactor de pagos multiarchivo', 'refactoriza el módulo de pagos en varios archivos')).toBe('opus')
+  expect(classify('Endpoint', `implementa el endpoint nuevo. ${'Detalle. '.repeat(5)}No toques datos de producción ni transacciones.`)).toBe('sonnet')
+  expect(classify('Buscar arquitectura', 'busca dónde se define la arquitectura de pagos en varios módulos')).not.toBe('fable')
+})
+
+test('route: only dev reaches fable', () => {
+  const goat = ['Rediseño multiarchivo de pagos', 'rediseña la arquitectura de pagos en varios módulos'] as const
+  for (const t of ['review', 'Plan', 'general-purpose', 'qa', 'explorer', 'tooling']) {
+    expect(route(t, goat[0], goat[1], []).model).not.toBe('fable')
+  }
+  expect(route('dev', goat[0], goat[1], []).model).toBe('fable')
+  expect(route('dev', goat[0], goat[1], [{ kind: 'seven_day_fable', percentUsed: 85 }]).model).toBe('opus')
+  expect(route('dev', goat[0], goat[1], [{ kind: 'five_hour', percentUsed: 85 }]).model).toBe('opus')
+  expect(route('review', goat[0], goat[1], []).model).toBe('opus')
+  expect(route('qa', goat[0], goat[1], []).model).toBe('sonnet')
+})
+
+test('usage: fable drops a step and its own weekly limit removes it', () => {
+  expect(applyUsage('fable', 'haiku', usageState([{ kind: 'seven_day', percentUsed: 85 }])).level).toBe('opus')
+  expect(applyUsage('fable', 'haiku', usageState([{ kind: 'seven_day_fable', percentUsed: 85 }])).level).toBe('opus')
+  expect(applyUsage('fable', 'haiku', usageState([{ kind: 'seven_day_fable', percentUsed: 85 }, { kind: 'seven_day_opus', percentUsed: 90 }])).level).toBe('sonnet')
+  expect(applyUsage('fable', 'haiku', usageState([{ kind: 'five_hour', percentUsed: 10 }])).level).toBe('fable')
+  expect(applyUsage('fable', 'sonnet', usageState([{ kind: 'five_hour', percentUsed: 96 }])).level).toBe('sonnet')
+})
+
 test('classify: word boundaries avoid false positives', () => {
   expect(DOMAIN.test('update the author name')).toBe(false)
   expect(DOMAIN.test('authorship of the doc')).toBe(false)

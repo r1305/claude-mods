@@ -1,8 +1,8 @@
 # Model router
 
-Mod de Claude Code (0.11.1) para Claude Desktop (pestaña Code) y terminal.
+Mod de Claude Code (0.12.0) para Claude Desktop (pestaña Code) y terminal.
 
-Elige el modelo (haiku, sonnet u opus) de cada subagente según una tabla de suelos por agente, la complejidad de la tarea y los límites de uso de la cuenta. Muestra un único panel de cuotas y consumo: límites de 5 h y semanal, alertas, tokens por modelo y consumo por día y por sesión.
+Elige el modelo (haiku, sonnet, opus o fable) de cada subagente según una tabla de suelos por agente, la complejidad de la tarea y los límites de uso de la cuenta. Muestra un único panel de cuotas y consumo: límites de 5 h y semanal, alertas, tokens por modelo y consumo por día y por sesión.
 
 ## Qué hace
 
@@ -18,6 +18,17 @@ Elige el modelo (haiku, sonnet u opus) de cada subagente según una tabla de sue
 - **Esfuerzo**: indica el `effort` (low, medium, high, xhigh, max) con el que corre la sesión principal y la tarea, leído del `turn.step`. Cada subagente guarda también su esfuerzo.
 - **Histórico** de 7 días por familia (haiku, sonnet, opus, otros), compartido entre sesiones con el mod.
 - No hace llamadas a modelos, no usa procesos, no abre conexiones y no tiene temporizadores sin limpieza.
+
+## Niveles de escalado
+
+| Nivel | Modelo | Cuándo |
+| --- | --- | --- |
+| junior | haiku | lectura, búsqueda, cambios cosméticos |
+| middle | sonnet | implementación normal |
+| senior | opus | arquitectura, causa raíz, auth/seguridad, pagos, concurrencia, migraciones |
+| goat | fable | escalado explícito («tras dos intentos», «sigue fallando») o dos señales duras juntas en la descripción o el inicio del prompt con verbo de cambio: diseño multiarchivo, seguridad/pagos, datos de producción, concurrencia/transacciones |
+
+Cada tarea entra por su nivel y nunca pasa el techo del agente. Solo el agente `dev` tiene techo fable; el resto (plan, review, qa, explorer, tooling y genéricos) llega como máximo a opus. Con uso en aviso baja un escalón (fable → opus); un límite semanal de fable en aviso quita fable. En el panel las tareas fable aparecen en «Otros».
 
 ## Comandos
 
@@ -80,7 +91,7 @@ Las cifras cubren los turnos vistos desde que empezó la sesión; no se reconstr
 
 ## Estructura
 
-- `.claude-plugin/plugin.json`: manifiesto, versión 0.11.1, contrato de estado en `types/index.d.ts`.
+- `.claude-plugin/plugin.json`: manifiesto, versión 0.12.0, contrato de estado en `types/index.d.ts`.
 - `hooks/hooks.json`: módulo de hooks `./register.tsx`.
 - `hooks/register.tsx`: hooks y cableado (`session.start`, `session.measure`, `turn.complete`, `agent.spawn`, `command.run` de `/model-router` y `/quota`, `ui.render` de los panes `model-router`, `model-router-tokens` y `model-router-history`, `prompt.compose`).
 - `hooks/quota.ts`: lógica pura de límites, umbrales, alertas, preferencias, tokens por modelo y comandos.

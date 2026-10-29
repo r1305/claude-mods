@@ -1,4 +1,5 @@
-import type { ModelRouterLevel, ModelRouterTask } from '../types'
+import type { ModelRouterBucket, ModelRouterTask } from '../types'
+import { bucketOf } from './usage'
 
 export type RunProgress = { total: number; done: number; running: number; pct: number }
 
@@ -8,11 +9,11 @@ export const turnTasks = (tasks: readonly ModelRouterTask[], run: number): Model
     .filter(t => t.run === run || t.status === 'running')
     .sort((a, b) => Number(b.status === 'running') - Number(a.status === 'running') || a.startedAt - b.startedAt)
 
-const GROUP_ORDER: ModelRouterLevel[] = ['opus', 'sonnet', 'haiku']
+const GROUP_ORDER: ModelRouterBucket[] = ['opus', 'sonnet', 'haiku', 'other']
 
-/** Tasks grouped by model, Opus, Sonnet, Haiku; empty groups left out, order inside kept. */
+/** Tasks grouped by model, Opus, Sonnet, Haiku, Otros (fable); empty groups left out, order inside kept. */
 export const groupByModel = (tasks: readonly ModelRouterTask[]) =>
-  GROUP_ORDER.map(b => ({ b, tasks: tasks.filter(t => t.model === b) })).filter(g => g.tasks.length > 0)
+  GROUP_ORDER.map(b => ({ b, tasks: tasks.filter(t => bucketOf(t.model) === b) })).filter(g => g.tasks.length > 0)
 
 /** Finished tasks (done or error), newest first. History is per session: the tasks atom holds at most MAX_TASKS and is lost on restart. */
 export const historyOf = (tasks: readonly ModelRouterTask[]): ModelRouterTask[] =>

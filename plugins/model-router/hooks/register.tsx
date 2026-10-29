@@ -29,7 +29,7 @@ const HISTORY_PANE = 'model-router-history'
 const HISTORY_TITLE = 'Historial de tareas'
 const MAX_TASKS = 200
 const REFRESH_MS = 30_000
-const LEVELS: ModelRouterLevel[] = ['haiku', 'sonnet', 'opus']
+const LEVELS: ModelRouterLevel[] = ['haiku', 'sonnet', 'opus', 'fable']
 
 const COMMAND = {
   name: 'model-router',

@@ -80,3 +80,11 @@ test('history: only finished tasks, newest first', () => {
   expect(historyOf(tasks).map(t => t.id)).toEqual(['c', 'd', 'a'])
   expect(historyOf([task('x', 1, 'running')])).toEqual([])
 })
+
+test('groupByModel: fable tasks are listed under Otros instead of being dropped', () => {
+  const tasks: ModelRouterTask[] = [{ ...task('a', 1, 'running'), model: 'fable' }, task('b', 1, 'done')]
+  expect(groupByModel(tasks).map(g => [g.b, g.tasks.map(t => t.id)])).toEqual([
+    ['sonnet', ['b']],
+    ['other', ['a']],
+  ])
+})
