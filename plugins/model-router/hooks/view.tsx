@@ -9,7 +9,6 @@ import {
   MODEL_LETTER,
   MODEL_NAME,
   bar,
-  bucketOf,
   clamp,
   fmtPct,
   fmtReset,
@@ -345,10 +344,7 @@ export function renderPanel(els: Els, d: PanelData, o: PanelOpts): El {
     }
   }
 
-  const running = d.tasks.filter(t => t.status === 'running')
-  const isLive = running.length > 0
-  const MODEL_ORDER = ['opus', 'sonnet', 'haiku', 'other'] as const
-  const runCounts = MODEL_ORDER.map(b => ({ b, n: running.filter(t => bucketOf(t.model) === b).length })).filter(x => x.n > 0)
+  const isLive = d.tasks.some(t => t.status === 'running')
 
   const lim = planLimits(d.limits)
   const hd = health(d.limits, d.prefs)
@@ -394,27 +390,6 @@ export function renderPanel(els: Els, d: PanelData, o: PanelOpts): El {
       const high = lim.reduce((m, l) => Math.max(m, l.percentUsed), 0)
       if (high >= d.prefs.warn) rows.push(P('lim-help', [[`→ ${HELP_HIGH}`, { bold: true, color: levelColor(high, d.prefs) }]], inner))
       return { title: [['Límites de tu plan', BOLD]], body: rows }
-    },
-  }
-
-  /** One-line summary of the model the router chose for the subagents running now (Opus 2 · Sonnet 1 · Haiku 3). */
-  const modelsBlock: Block = {
-    id: 'modelos',
-    build: inner => {
-      const items = runCounts.map(x => ({ b: x.b as ModelRouterBucket, text: `${MODEL_NAME[x.b]} ${x.n}` }))
-      const plain = items.map(i => i.text).join(' · ')
-      const row: Row =
-        Svg !== null
-          ? {
-              h: 2,
-              el: <Svg key="mod" source={chipsSvg(svgWidth(inner), items)} alt={plain} width={svgWidth(inner)} height={SVG_CHIPS_H} />,
-            }
-          : P(
-              'mod',
-              items.flatMap((it, i): Seg[] => [...(i > 0 ? ([['  ·  ', DIM]] as Seg[]) : []), dot(it.b), [it.text, { bold: true, color: MODEL_COLOR[it.b] }]]),
-              inner,
-            )
-      return { title: [['Modelos en curso', BOLD], [`  ${running.length}`, DIM]], body: [row] }
     },
   }
 
@@ -506,7 +481,7 @@ export function renderPanel(els: Els, d: PanelData, o: PanelOpts): El {
     },
   }
 
-  const blocks: Block[] = [limitsBlock, listBlock, ...(isLive ? [modelsBlock] : []), usageBlock]
+  const blocks: Block[] = [limitsBlock, listBlock, usageBlock]
 
   const footH = isNarrow ? 2 : 1
   const avail = Math.max(1, o.bodyRows - 2 - footH)
@@ -600,11 +575,6 @@ export function renderPanel(els: Els, d: PanelData, o: PanelOpts): El {
     if (high >= d.prefs.warn) rows.push(L('cl-help', [['→ Usa modelos más baratos', { bold: true, color: levelColor(high, d.prefs) }]]))
     return { id: 'c-lim', name: 'límites', title: 'Límites', rows, partial: true }
   }
-  const cModels = (): CBlock => {
-    const full = runCounts.map(x => `${MODEL_NAME[x.b]} ${x.n}`).join(' · ')
-    const text = full.length <= W ? full : runCounts.map(x => `${MODEL_LETTER[x.b]} ${x.n}`).join(' · ')
-    return { id: 'c-mod', name: 'modelos', title: `En curso · ${running.length}`, rows: [L('cm', [[short(text, W), BOLD]])] }
-  }
   const cList = (): CBlock => ({
     id: 'c-list',
     name: 'tareas',
@@ -641,7 +611,7 @@ export function renderPanel(els: Els, d: PanelData, o: PanelOpts): El {
     const nodes: El[] = []
     const dropped: string[] = []
     let used = 0
-    for (const b of [cLimits(), cList(), ...(isLive ? [cModels()] : []), cUse()]) {
+    for (const b of [cLimits(), cList(), cUse()]) {
       const left = room - used - 1
       const rows = left >= 1 ? takeRows(b.rows, left) : []
       if (rows.length === 0 || (rows.length < b.rows.length && !b.partial)) {

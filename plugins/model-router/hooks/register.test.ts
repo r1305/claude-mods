@@ -95,7 +95,7 @@ test('named agents are routed with their base and floor', async ($, on) => {
   await $.agent.spawn(spawnInput({ subagentType: 'some-plugin:writer', description: 'Cambiar color', prompt: 'cambia el color del boton en css' }))
   expect(seen.model).toBe('sonnet')
   const ui = await $.ui.mount(PANE)
-  expect(textOf(await ui.drawn())).toMatch(/Modelos en curso.*Sonnet \d/)
+  expect(textOf(await ui.drawn())).toContain('Tareas en progreso')
 })
 
 test('usage limits lower the routed model', async ($, on) => {
@@ -144,16 +144,16 @@ test('background spawn stays running until its turn.complete', async ($, on) => 
   await $.agent.spawn(spawnInput({ background: true }))
   expect(statuses[statuses.length - 1]).toBe('Router ●')
   const ui = await $.ui.mount(PANE)
-  expect(textOf(await ui.drawn())).toContain('Modelos en curso')
+  expect(textOf(await ui.drawn())).toContain('· en curso')
 
   const out = await $.turn.complete(complete('agent_1', 'answer'))
   expect(out.text).toBe('ok')
   expect(statuses[statuses.length - 1]).toBe('Router ●')
-  expect(textOf(await ui.drawn())).not.toContain('Modelos en curso')
+  expect(textOf(await ui.drawn())).not.toContain('· en curso')
 
   await $.turn.complete(complete('agent_1', 'answer'))
   await $.turn.complete(complete('other', 'answer'))
-  expect(textOf(await ui.drawn())).not.toContain('Modelos en curso')
+  expect(textOf(await ui.drawn())).not.toContain('· en curso')
 })
 
 test('turn.complete with error marks the task error', async ($, on) => {
@@ -163,7 +163,7 @@ test('turn.complete with error marks the task error', async ($, on) => {
   await $.agent.spawn(spawnInput({}))
   await $.turn.complete(complete('agent_1', 'error'))
   const ui = await $.ui.mount(PANE)
-  expect(textOf(await ui.drawn())).not.toContain('Modelos en curso')
+  expect(textOf(await ui.drawn())).not.toContain('· en curso')
 })
 
 test('denied spawn is recorded as error', async ($, on) => {
@@ -172,7 +172,7 @@ test('denied spawn is recorded as error', async ($, on) => {
   const r = await $.agent.spawn(spawnInput({}))
   expect(r.deny).toBe('nope')
   const ui = await $.ui.mount(PANE)
-  expect(textOf(await ui.drawn())).not.toContain('Modelos en curso')
+  expect(textOf(await ui.drawn())).not.toContain('· en curso')
 })
 
 test('routing off does not rewrite', async ($, on) => {

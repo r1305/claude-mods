@@ -172,10 +172,7 @@ test('resumen with data: how am I doing, which model runs, today vs 7 days', asy
   expect(text).toMatch(/Ventana de 5 h .*34 %.*se reinicia en 2 h 10 min/)
   expect(text).toMatch(/Semana .*41 %/)
   expect(text).not.toContain('Pasa a modelos más baratos')
-  expect(text).toContain('Modelos en curso')
-  expect(text).toMatch(/Opus 1/)
-  expect(text).toMatch(/Sonnet 1/)
-  expect(text).not.toMatch(/Haiku 1/)
+  expect(text).not.toContain('Modelos en curso')
   expect(text).toContain('Consumo')
   expect(text).toMatch(/Hoy .*7 días/)
   expect(text).toContain('Detalle de consumo: /quota')
@@ -212,14 +209,13 @@ test('resumen with limits almost exhausted', async ($, on) => {
   expect(text).toContain('Pasa a modelos más baratos')
 })
 
-test('resumen without limits and without tasks shows friendly empty states and no running block', async ($, on) => {
+test('resumen without limits and without tasks shows friendly empty states', async ($, on) => {
   world(on)
   await begin($)
   const ui = await $.ui.mount(pane())
   const text = await textOfPane(ui)
   expect(text).toContain('Sin datos de límites')
   expect(text).toContain('Sin datos: los límites aparecen con una suscripción de Claude.')
-  expect(text).not.toContain('Modelos en curso')
   expect(text).toContain('Sin tareas en este turno')
   expect(text).not.toContain('Principal')
 })
@@ -282,9 +278,9 @@ test('low viewport keeps header and limits and points to a bigger panel', async 
   expect(text).toContain('… amplía el panel para ver el resto')
 })
 
-test('desktop surface draws emoji and animated SVG meters when the engine offers Svg; terminal does not', async ($, on) => {
+test('desktop surface draws emoji and animated SVG meters when the engine offers Svg', async ($, on) => {
   world(on, { limits: LIMITS_OK })
-  await begin($)
+  await $.session.start({ cwd: '/w/proyecto-a', surface: 'desktop', isInteractive: true } as never)
   await $.agent.spawn(spawn('Buscar archivos de login'))
   const desktop = await $.ui.mount(pane({ surface: 'desktop' }))
   const dText = await textOfPane(desktop)
@@ -296,9 +292,15 @@ test('desktop surface draws emoji and animated SVG meters when the engine offers
     expect(dJson).toContain('prefers-color-scheme: light')
     expect(dJson).toContain('class=\\"live')
   }
-  const term = await textOfPane(await $.ui.mount(pane()))
-  expect(term).not.toMatch(/[🟢🔵🟣⏳✅❌]/u)
-  expect(JSON.stringify(await (await $.ui.mount(pane())).drawn())).not.toContain('<svg')
+})
+
+test('terminal surface draws no emoji and no SVG', async ($, on) => {
+  world(on, { limits: LIMITS_OK })
+  await begin($)
+  await $.agent.spawn(spawn('Buscar archivos de login'))
+  const ui = await $.ui.mount(pane())
+  expect(await textOfPane(ui)).not.toMatch(/[🟢🔵🟣⏳✅❌]/u)
+  expect(JSON.stringify(await ui.drawn())).not.toContain('<svg')
 })
 
 test('pause button flips the router state in the header and the status line', async ($, on) => {
@@ -349,8 +351,7 @@ for (const cols of [30, 40, 45]) {
     const lines = linesOf(await ui.drawn())
     expect(lines.filter(l => l.length > cols)).toEqual([])
     expect(lines).toContain('● Vas bien')
-    expect(lines.some(l => /^En curso · 2/.test(l))).toBe(true)
-    expect(lines).toContain('Opus 1 · Sonnet 1')
+    expect(lines.some(l => /^En curso · \d/.test(l))).toBe(false)
     expect(lines.some(l => /^Hoy \d+(,\d)?k? · 7d \d+(,\d)?k?$/.test(l))).toBe(true)
     expect(lines.some(l => l.startsWith('Reparto'))).toBe(false)
   })
