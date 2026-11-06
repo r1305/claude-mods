@@ -1,6 +1,6 @@
 # Model router
 
-Mod de Claude Code (0.13.0) para Claude Desktop (pestaña Code) y terminal.
+Mod de Claude Code (0.13.1) para Claude Desktop (pestaña Code) y terminal.
 
 Elige el modelo (haiku, sonnet, opus o fable) de cada subagente según una tabla de suelos por agente, la complejidad de la tarea y los límites de uso de la cuenta. Muestra un único panel de cuotas y consumo: límites de 5 h y semanal, alertas, tokens por modelo y consumo por día y por sesión.
 
@@ -93,7 +93,7 @@ Las cifras cubren los turnos vistos desde que empezó la sesión; no se reconstr
 
 ## Estructura
 
-- `.claude-plugin/plugin.json`: manifiesto, versión 0.13.0, contrato de estado en `types/index.d.ts`.
+- `.claude-plugin/plugin.json`: manifiesto, versión 0.13.1, contrato de estado en `types/index.d.ts`.
 - `hooks/hooks.json`: módulo de hooks `./register.tsx`.
 - `hooks/register.tsx`: hooks y cableado (`session.start`, `session.measure`, `turn.complete`, `agent.spawn`, `command.run` de `/model-router` y `/quota`, `ui.render` de los panes `model-router`, `model-router-tokens` y `model-router-history`, `prompt.compose`).
 - `hooks/quota.ts`: lógica pura de límites, umbrales, alertas, preferencias, tokens por modelo y comandos.
