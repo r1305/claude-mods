@@ -2,7 +2,7 @@ import { test, expect, mock } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
 import type { ModelRouterDay } from '../types'
-import { addTokens, aggregate, asUsageFile, bar, bucketOf, dayKey, fmtDur, fmtReset, fmtTokens, health, levelColor, lastDayKeys, pct, stackCells, statusText, trimDays, weekdayShort } from './usage'
+import { addTokens, aggregate, asUsageFile, bar, bucketOf, dayKey, fmtDur, fmtReset, fmtTokens, health, levelColor, lastDayKeys, mergeDays, pct, stackCells, statusText, trimDays, weekdayShort } from './usage'
 import { DEFAULT_PREFS } from './quota'
 
 const TH = { warn: DEFAULT_PREFS.warn, critical: DEFAULT_PREFS.critical }
@@ -159,6 +159,22 @@ test('usage file parser folds legacy other into fable without changing the total
   expect(both?.days['2026-10-12']).toEqual({ haiku: 1, sonnet: 0, opus: 0, fable: 140, total: 141 })
   const agg = aggregate([{ id: 'a', file: { name: 'x', project: 'p', days: only!.days } }], NOW)
   expect(agg.week.fable + agg.week.haiku + agg.week.sonnet + agg.week.opus).toBe(agg.week.total)
+})
+
+test('fable null, missing fields and legacy in-memory days never give NaN', () => {
+  const k = dayKey(NOW)
+  const nul = asUsageFile({ days: { [k]: { haiku: 10, sonnet: 5, opus: 0, fable: null, total: 30 } } })
+  expect(nul?.days[k]).toEqual({ haiku: 10, sonnet: 5, opus: 0, fable: 0, total: 30 })
+  const empty = asUsageFile({ days: { [k]: {} } })
+  expect(empty?.days[k]).toEqual({ haiku: 0, sonnet: 0, opus: 0, fable: 0, total: 0 })
+  const legacy = { [k]: { haiku: 1, sonnet: 2, opus: 3, other: 100, total: 106 } } as unknown as Record<string, ModelRouterDay>
+  const added = addTokens(legacy, NOW, 'fable', 50)[k]
+  expect(added).toEqual({ haiku: 1, sonnet: 2, opus: 3, fable: 150, total: 156 })
+  const merged = mergeDays(nul!.days, legacy)[k]
+  expect(merged).toEqual({ haiku: 10, sonnet: 5, opus: 3, fable: 100, total: 106 })
+  const broken = { [k]: { haiku: 1, sonnet: 0, opus: 0, fable: NaN, total: 9 } } as Record<string, ModelRouterDay>
+  const agg = aggregate([{ id: 'a', file: { name: 'x', project: 'p', days: mergeDays({}, broken) } }], NOW)
+  expect(Number.isNaN(agg.today.fable)).toBe(false)
 })
 
 test('usage panel with rateLimits, multi-session files and the usage command', async ($, on) => {

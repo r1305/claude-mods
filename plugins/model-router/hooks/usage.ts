@@ -78,15 +78,17 @@ export const addTokens = (
 ) => {
   if (!(n > 0)) return days
   const key = dayKey(now)
-  const cur = days[key] ?? emptyDay()
+  const cur = asDay(days[key] ?? {})
   return trimDays({ ...days, [key]: { ...cur, [bucket]: cur[bucket] + n, total: cur.total + n } }, now)
 }
 
 /** Per-day, per-field max: how a session reloads its own file without losing counts. */
 export const mergeDays = (a: Record<string, ModelRouterDay>, b: Record<string, ModelRouterDay>) => {
-  const out: Record<string, ModelRouterDay> = { ...a }
-  for (const [k, v] of Object.entries(b)) {
+  const out: Record<string, ModelRouterDay> = {}
+  for (const [k, raw] of Object.entries(a)) out[k] = asDay(raw)
+  for (const [k, raw] of Object.entries(b)) {
     const o = out[k]
+    const v = asDay(raw)
     out[k] = o
       ? {
           haiku: Math.max(o.haiku, v.haiku),
@@ -101,6 +103,15 @@ export const mergeDays = (a: Record<string, ModelRouterDay>, b: Record<string, M
 }
 
 const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : 0)
+
+/** One sanitized day: legacy `other` folds into fable, null/NaN/missing count as 0. */
+export const asDay = (raw: object): ModelRouterDay => {
+  const d = raw as Record<string, unknown>
+  // legacy files and in-memory state from older versions counted Fable under `other`
+  const day = { haiku: num(d.haiku), sonnet: num(d.sonnet), opus: num(d.opus), fable: num(d.fable) + num(d.other), total: 0 }
+  day.total = Math.max(num(d.total), day.haiku + day.sonnet + day.opus + day.fable)
+  return day
+}
 
 export const parseJson = (text: string): unknown => {
   try {
@@ -117,11 +128,7 @@ export const asUsageFile = (v: unknown): ModelRouterUsageFile | undefined => {
   const days: Record<string, ModelRouterDay> = {}
   for (const [k, raw] of Object.entries(o.days as Record<string, unknown>)) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(k) || typeof raw !== 'object' || raw === null) continue
-    const d = raw as Record<string, unknown>
-    // legacy files counted Fable under `other`: fold it into fable on read
-    const day = { haiku: num(d.haiku), sonnet: num(d.sonnet), opus: num(d.opus), fable: num(d.fable) + num(d.other), total: 0 }
-    day.total = Math.max(num(d.total), day.haiku + day.sonnet + day.opus + day.fable)
-    days[k] = day
+    days[k] = asDay(raw)
   }
   return {
     name: typeof o.name === 'string' ? o.name : '',
