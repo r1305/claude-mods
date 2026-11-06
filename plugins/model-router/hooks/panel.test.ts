@@ -7,7 +7,7 @@ import { lastDayKeys } from './usage'
 
 const NOW = new Date(2026, 9, 12, 12, 0, 0).getTime()
 
-const day = (haiku: number, sonnet = 0, opus = 0): ModelRouterDay => ({ haiku, sonnet, opus, other: 0, total: haiku + sonnet + opus })
+const day = (haiku: number, sonnet = 0, opus = 0): ModelRouterDay => ({ haiku, sonnet, opus, fable: 0, total: haiku + sonnet + opus })
 
 const pane = (o: { cols?: number; rows?: number; bodyRows?: number; surface?: string } = {}) =>
   ({

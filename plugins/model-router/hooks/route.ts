@@ -1,4 +1,4 @@
-import type { ModelRouterLevel, ModelRouterLimit } from '../types'
+import type { ModelRouterLevel, ModelRouterLimit, ModelRouterTask } from '../types'
 import { STRONG, classify, classifyDefault, head } from './classify'
 import { DEFAULT_PREFS } from './quota'
 import type { Thresholds } from './quota'
@@ -105,6 +105,17 @@ export type RouteDecision = {
   reason: string
 }
 
+/** Failed runs of one agent type and description before fable takes the relaunch over as supervisor. */
+export const SUPERVISE_AFTER = 2
+
+const taskKey = (subagentType: string, description: string) => `${subagentType.trim().toLowerCase()}\n${description.trim().toLowerCase().replace(/\s+/g, ' ')}`
+
+/** Runs of the same agent type and description that ended in error (spawn denied, or turn ended without an answer). */
+export const failedAttempts = (tasks: readonly ModelRouterTask[], subagentType: string, description: string) => {
+  const key = taskKey(subagentType, description)
+  return description.trim() === '' ? 0 : tasks.filter(t => t.status === 'error' && taskKey(t.subagentType, t.description) === key).length
+}
+
 export function route(
   subagentType: string,
   description: string,
@@ -112,12 +123,15 @@ export function route(
   limits: readonly ModelRouterLimit[] | undefined,
   requested?: string,
   th: Thresholds = DEFAULT_PREFS,
+  failures = 0,
 ): RouteDecision {
   const rule = ruleFor(subagentType)
-  const picked = clampLevel(rule.pick(description, prompt), rule.floor, rule.ceiling)
+  const supervised = failures >= SUPERVISE_AFTER
+  const picked = supervised ? 'fable' : clampLevel(rule.pick(description, prompt), rule.floor, rule.ceiling)
   const used = applyUsage(picked, rule.floor, usageState(limits), th)
   const reason = [
     `${subagentType || 'general-purpose'}: base ${rule.base}, suelo ${rule.floor}, tarea ${picked}`,
+    ...(supervised ? [`supervisor fable tras ${failures} intentos fallidos`] : []),
     ...(requested !== undefined && requested !== '' ? [`pedido ${requested} (ignorado)`] : []),
     ...used.notes,
   ].join(' · ')

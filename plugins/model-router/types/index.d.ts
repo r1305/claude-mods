@@ -28,7 +28,7 @@ export type ModelRouterTask = {
   run?: number
 }
 
-export type ModelRouterBucket = 'haiku' | 'sonnet' | 'opus' | 'other'
+export type ModelRouterBucket = ModelRouterLevel
 
 /** tokens counted per model bucket for one local day (input + output + cache) */
 export type ModelRouterDay = Record<ModelRouterBucket, number> & { total: number }

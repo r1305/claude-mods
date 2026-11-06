@@ -175,6 +175,28 @@ test('denied spawn is recorded as error', async ($, on) => {
   expect(textOf(await ui.drawn())).not.toContain('· en curso')
 })
 
+test('third run of an agent after two failures goes to fable as supervisor', async ($, on) => {
+  mock.clock(on)
+  on('turn.complete', (_$, e) => ({ text: e.answer }) as never)
+  const seen: { model?: unknown } = {}
+  let n = 0
+  on('agent.spawn', (_$, e) => {
+    seen.model = e.model
+    return { model: e.model as string, agentId: `agent_${++n}` } as never
+  })
+  const qa = { subagentType: 'qa', description: 'Validar login', prompt: 'valida el flujo de login' }
+  await $.agent.spawn(spawnInput(qa))
+  expect(seen.model).toBe('haiku')
+  await $.turn.complete(complete('agent_1', 'error'))
+  await $.agent.spawn(spawnInput(qa))
+  expect(seen.model).toBe('haiku')
+  await $.turn.complete(complete('agent_2', 'error'))
+  await $.agent.spawn(spawnInput({ ...qa, description: ' validar  login ' }))
+  expect(seen.model).toBe('fable')
+  await $.agent.spawn(spawnInput({ ...qa, description: 'Validar registro' }))
+  expect(seen.model).toBe('haiku')
+})
+
 test('routing off does not rewrite', async ($, on) => {
   mock.clock(on)
   const seen: { model?: unknown } = { model: 'unset' }

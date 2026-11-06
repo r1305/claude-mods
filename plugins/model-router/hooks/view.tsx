@@ -95,11 +95,11 @@ const sumH = (rows: Row[]) => rows.reduce((s, r) => s + r.h, 0)
 // prefers-color-scheme, still under prefers-reduced-motion. Other surfaces never reach these strings.
 const FONT = "system-ui, -apple-system, 'Segoe UI', sans-serif"
 const PANE_CSS = `<style>
-svg{--t:#e8ecf4;--s:#8b93a7;--k:#1a2030;--bg:#0d111b;--ok:#34d399;--ok2:#a7f3d0;--wa:#fbbf24;--wa2:#fde68a;--cr:#f87171;--cr2:#fecaca;--n1:#22d3ee;--n2:#c084fc;--hk:#4ade80;--sn:#60a5fa;--op:#c084fc;--ot:#9ca3af}
-@media (prefers-color-scheme: light){svg{--t:#1f1f1f;--s:#6b6b68;--k:#e4e7ee;--bg:#fff;--ok:#2e9d5b;--ok2:#4ac17d;--wa:#c98a0a;--wa2:#f0bb3c;--cr:#d64545;--cr2:#f06a6a;--n1:#0891b2;--n2:#7c3aed;--hk:#2e9d5b;--sn:#3b82f6;--op:#a855f7;--ot:#6b7280}}
+svg{--t:#e8ecf4;--s:#8b93a7;--k:#1a2030;--bg:#0d111b;--ok:#34d399;--ok2:#a7f3d0;--wa:#fbbf24;--wa2:#fde68a;--cr:#f87171;--cr2:#fecaca;--n1:#22d3ee;--n2:#c084fc;--hk:#4ade80;--sn:#60a5fa;--op:#c084fc;--fb:#fbbf24;--ot:#9ca3af}
+@media (prefers-color-scheme: light){svg{--t:#1f1f1f;--s:#6b6b68;--k:#e4e7ee;--bg:#fff;--ok:#2e9d5b;--ok2:#4ac17d;--wa:#c98a0a;--wa2:#f0bb3c;--cr:#d64545;--cr2:#f06a6a;--n1:#0891b2;--n2:#7c3aed;--hk:#2e9d5b;--sn:#3b82f6;--op:#a855f7;--fb:#c98a0a;--ot:#6b7280}}
 .t{fill:var(--t)}.s{fill:var(--s)}.k{fill:var(--k)}.tick{fill:var(--bg)}.cf{fill:currentColor}
 .lv-normal{color:var(--ok)}.lv-aviso{color:var(--wa)}.lv-critico{color:var(--cr)}.neon{color:var(--n1)}
-.m-haiku{color:var(--hk)}.m-sonnet{color:var(--sn)}.m-opus{color:var(--op)}.m-other{color:var(--ot)}
+.m-haiku{color:var(--hk)}.m-sonnet{color:var(--sn)}.m-opus{color:var(--op)}.m-fable{color:var(--fb)}
 .glow{filter:drop-shadow(0 0 2.5px currentColor)}
 .fill{transform-box:fill-box;transform-origin:left center;animation:grow .7s ease-out both}
 .fill.done{animation:grow .7s ease-out both,pulse 1.1s ease-in-out .7s 3}
@@ -186,7 +186,7 @@ ${lvl !== 'normal' ? `<text class="cf ${cls}" x="${W}" y="37" text-anchor="end" 
   )
 }
 
-/** Model glyph centred at (cx, 13) inside a spinning dashed ring: dot for haiku, diamond for sonnet, hexagon for opus. */
+/** Model glyph centred at (cx, 13) inside a spinning dashed ring: dot for haiku, diamond for sonnet, hexagon for opus, square for fable. */
 const modelGlyph = (b: ModelRouterBucket, cx: number) => {
   const hex = Array.from({ length: 6 }, (_, i) => `${(cx + 4.2 * Math.cos((Math.PI / 3) * i - Math.PI / 2)).toFixed(1)},${(13 + 4.2 * Math.sin((Math.PI / 3) * i - Math.PI / 2)).toFixed(1)}`).join(' ')
   const core =
@@ -194,7 +194,9 @@ const modelGlyph = (b: ModelRouterBucket, cx: number) => {
       ? `<path d="M${cx} 8.8l4.2 4.2-4.2 4.2-4.2-4.2z"/>`
       : b === 'opus'
         ? `<polygon points="${hex}"/>`
-        : `<circle cx="${cx}" cy="13" r="3.2"/>`
+        : b === 'fable'
+          ? `<rect x="${(cx - 3.4).toFixed(1)}" y="9.6" width="6.8" height="6.8" rx="1"/>`
+          : `<circle cx="${cx}" cy="13" r="3.2"/>`
   return `<g class="live m-${b}" fill="currentColor">${core}</g><circle class="spin m-${b}" style="transform-origin:${cx}px 13px" cx="${cx}" cy="13" r="6.4" fill="none" stroke="currentColor" stroke-width="1" stroke-dasharray="3 2.2"/>`
 }
 

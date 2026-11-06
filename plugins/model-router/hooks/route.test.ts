@@ -1,7 +1,8 @@
 import { test, expect } from 'claude-code/testing'
 
+import type { ModelRouterTask } from '../types'
 import { DOMAIN, classify, classifyDefault } from './classify'
-import { applyUsage, route, routeNote, usageState } from './route'
+import { SUPERVISE_AFTER, applyUsage, failedAttempts, route, routeNote, usageState } from './route'
 
 const LONG_SEARCH = `Lista todos los archivos que usan el helper de fechas y resume en qué módulo está cada uno. ${'Incluye rutas, nombres de funciones y el número de línea de cada llamada encontrada en el repositorio. '.repeat(15)}`
 
@@ -37,6 +38,35 @@ test('route: only dev reaches fable', () => {
   expect(route('dev', goat[0], goat[1], [{ kind: 'five_hour', percentUsed: 85 }]).model).toBe('opus')
   expect(route('review', goat[0], goat[1], []).model).toBe('opus')
   expect(route('qa', goat[0], goat[1], []).model).toBe('sonnet')
+})
+
+test('route: after two failed runs fable supervises the relaunch of any agent, usage limits still apply', () => {
+  const qa = ['Validar login', 'valida el flujo de login'] as const
+  expect(route('qa', qa[0], qa[1], [], undefined, undefined, 1).model).toBe('haiku')
+  for (const t of ['qa', 'review', 'explorer', 'tooling', 'dev']) {
+    const d = route(t, qa[0], qa[1], [], undefined, undefined, 2)
+    expect(d.model).toBe('fable')
+    expect(d.reason).toContain('supervisor fable tras 2 intentos fallidos')
+  }
+  expect(route('qa', qa[0], qa[1], [{ kind: 'seven_day_fable', percentUsed: 85 }], undefined, undefined, 2).model).toBe('opus')
+  expect(route('qa', qa[0], qa[1], [{ kind: 'five_hour', percentUsed: 96 }], undefined, undefined, 3).model).toBe('haiku')
+})
+
+test('failedAttempts: counts errors of the same agent type and description only', () => {
+  const t = (subagentType: string, description: string, status: ModelRouterTask['status']): ModelRouterTask => ({
+    id: `${subagentType}-${description}-${status}-${Math.random()}`,
+    model: 'sonnet',
+    description,
+    subagentType,
+    source: 'auto',
+    status,
+    startedAt: 0,
+  })
+  const tasks = [t('qa', 'Validar login', 'error'), t('QA', ' validar  login ', 'error'), t('qa', 'Validar login', 'done'), t('dev', 'Validar login', 'error'), t('qa', 'Otra cosa', 'error')]
+  expect(failedAttempts(tasks, 'qa', 'Validar login')).toBe(2)
+  expect(failedAttempts(tasks, 'dev', 'Validar login')).toBe(1)
+  expect(failedAttempts(tasks, 'qa', '')).toBe(0)
+  expect(SUPERVISE_AFTER).toBe(2)
 })
 
 test('usage: fable drops a step and its own weekly limit removes it', () => {

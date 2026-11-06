@@ -2,7 +2,6 @@ import type {
   ModelRouterBucket,
   ModelRouterDay,
   ModelRouterLimit,
-  ModelRouterLevel,
   ModelRouterModels,
   ModelRouterPrefs,
   ModelRouterTask,
@@ -24,19 +23,19 @@ import {
 } from './quota'
 import type { Thresholds } from './quota'
 
-export const BUCKETS: ModelRouterBucket[] = ['haiku', 'sonnet', 'opus', 'other']
+export const BUCKETS: ModelRouterBucket[] = ['haiku', 'sonnet', 'opus', 'fable']
 export const KEEP_DAYS = 30
 export const WEEK_DAYS = 7
 export const FLUSH_MS = 30_000
 
-export const emptyDay = (): ModelRouterDay => ({ haiku: 0, sonnet: 0, opus: 0, other: 0, total: 0 })
+export const emptyDay = (): ModelRouterDay => ({ haiku: 0, sonnet: 0, opus: 0, fable: 0, total: 0 })
 
 export const emptyTokens = (): ModelRouterSessionTokens => ({
   input: 0,
   output: 0,
   cacheRead: 0,
   cacheWrite: 0,
-  byModel: { haiku: 0, sonnet: 0, opus: 0, other: 0 },
+  byModel: { haiku: 0, sonnet: 0, opus: 0, fable: 0 },
 })
 
 const pad = (n: number) => String(n).padStart(2, '0')
@@ -59,8 +58,8 @@ export const lastDayKeys = (now: number, n: number) =>
 
 export const bucketOf = (model: string | undefined): ModelRouterBucket => {
   const m = (model ?? '').toLowerCase()
-  const level: ModelRouterLevel | undefined = (['haiku', 'sonnet', 'opus'] as const).find(l => m.includes(l))
-  return level ?? 'other'
+  // shortcut: a model name outside the four families counts as sonnet, add a bucket if a new family appears
+  return BUCKETS.find(l => m.includes(l)) ?? 'sonnet'
 }
 
 /** Drops every day older than the last KEEP_DAYS (today included). */
@@ -93,7 +92,7 @@ export const mergeDays = (a: Record<string, ModelRouterDay>, b: Record<string, M
           haiku: Math.max(o.haiku, v.haiku),
           sonnet: Math.max(o.sonnet, v.sonnet),
           opus: Math.max(o.opus, v.opus),
-          other: Math.max(o.other, v.other),
+          fable: Math.max(o.fable, v.fable),
           total: Math.max(o.total, v.total),
         }
       : v
@@ -119,8 +118,8 @@ export const asUsageFile = (v: unknown): ModelRouterUsageFile | undefined => {
   for (const [k, raw] of Object.entries(o.days as Record<string, unknown>)) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(k) || typeof raw !== 'object' || raw === null) continue
     const d = raw as Record<string, unknown>
-    const day = { haiku: num(d.haiku), sonnet: num(d.sonnet), opus: num(d.opus), other: num(d.other), total: 0 }
-    day.total = Math.max(num(d.total), day.haiku + day.sonnet + day.opus + day.other)
+    const day = { haiku: num(d.haiku), sonnet: num(d.sonnet), opus: num(d.opus), fable: num(d.fable), total: 0 }
+    day.total = Math.max(num(d.total), day.haiku + day.sonnet + day.opus + day.fable)
     days[k] = day
   }
   return {
@@ -307,20 +306,20 @@ export const healthShort = (h: Health) => {
   return 'Vas bien'
 }
 
-export const MODEL_LETTER: Record<ModelRouterBucket, string> = { haiku: 'H', sonnet: 'S', opus: 'O', other: 'X' }
+export const MODEL_LETTER: Record<ModelRouterBucket, string> = { haiku: 'H', sonnet: 'S', opus: 'O', fable: 'F' }
 
 export const MODEL_COLOR: Record<ModelRouterBucket, string> = {
   haiku: 'green',
   sonnet: 'blue',
   opus: 'magenta',
-  other: 'gray',
+  fable: 'yellow',
 }
 
 export const MODEL_NAME: Record<ModelRouterBucket, string> = {
   haiku: 'Haiku',
   sonnet: 'Sonnet',
   opus: 'Opus',
-  other: 'Otros',
+  fable: 'Fable',
 }
 
 export const isEmoji = (surface: string | undefined) => surface !== undefined && surface !== 'terminal'
@@ -331,7 +330,7 @@ export const icons = (surface: string | undefined) =>
         haiku: '🟢',
         sonnet: '🔵',
         opus: '🟣',
-        other: '⚪',
+        fable: '🟡',
         running: '⏳',
         done: '✅',
         error: '❌',
@@ -344,7 +343,7 @@ export const icons = (surface: string | undefined) =>
         haiku: '●',
         sonnet: '●',
         opus: '●',
-        other: '○',
+        fable: '●',
         running: '»',
         done: '✓',
         error: '✗',

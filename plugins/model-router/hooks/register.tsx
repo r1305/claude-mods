@@ -4,7 +4,7 @@ import type { AgentSpawnResult, EngineInterface, Register, Timer } from 'claude-
 import type { ModelRouterAlertMemories, ModelRouterLevel, ModelRouterLimit, ModelRouterModels, ModelRouterPrefs, ModelRouterTask, ModelRouterUsageFile } from '../types'
 import { DEFAULT_PREFS, PREFS_KEY, WINDOWS, addUsage, alertText, emptyMemories, evaluateAlerts, parseCommand, parsePrefs, windowsOf } from './quota'
 import { progressOf, turnTasks } from './progress'
-import { route, routeNote } from './route'
+import { SUPERVISE_AFTER, failedAttempts, route, routeNote } from './route'
 import {
   FLUSH_MS,
   addTokens,
@@ -61,6 +61,7 @@ const POLICY = [
   'Model routing: the model-router mod is a middleware for every Agent tool call (all agent types except forks and workflow agents).',
   'It picks the subagent model itself from a per-agent base/floor table, the task complexity and the account usage limits, and overrides any `model` you pass.',
   'You do not need to choose `model`; write a clear `description` and prompt. Do not spawn agents just to save tokens.',
+  `Fable is the supervisor: after ${SUPERVISE_AFTER} failed runs of one agent (spawn denied, or its turn ended without an answer), relaunch it once more with the same subagent type and \`description\` and the router hands that run to fable instead of a third run at the same level.`,
 ].join('\n')
 
 const fileId = (id: string) => id.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 64)
@@ -338,9 +339,10 @@ export const register: Register = on => {
   }).catch(($, e, next) => next(e))
 
   on('agent.spawn', async ($, e, next) => {
-    const [enabled, lims, config, run] = await Promise.all([read($, isEnabled), read($, limits), read($, prefs), read($, runSeq)])
+    const [enabled, lims, config, run, prior] = await Promise.all([read($, isEnabled), read($, limits), read($, prefs), read($, runSeq), read($, tasks)])
     const isRouted = enabled && !e.fork && !e.workflow
-    const decision = isRouted ? route(e.subagentType ?? '', e.description ?? '', e.prompt ?? '', lims, e.model, config) : undefined
+    const failures = failedAttempts(prior, e.subagentType ?? '', e.description ?? '')
+    const decision = isRouted ? route(e.subagentType ?? '', e.description ?? '', e.prompt ?? '', lims, e.model, config, failures) : undefined
     const chosen = decision?.model
     const startedAt = await $.clock.now()
     let r: AgentSpawnResult | undefined

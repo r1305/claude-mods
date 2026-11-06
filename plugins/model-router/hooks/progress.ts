@@ -9,9 +9,9 @@ export const turnTasks = (tasks: readonly ModelRouterTask[], run: number): Model
     .filter(t => t.run === run || t.status === 'running')
     .sort((a, b) => Number(b.status === 'running') - Number(a.status === 'running') || a.startedAt - b.startedAt)
 
-const GROUP_ORDER: ModelRouterBucket[] = ['opus', 'sonnet', 'haiku', 'other']
+const GROUP_ORDER: ModelRouterBucket[] = ['fable', 'opus', 'sonnet', 'haiku']
 
-/** Tasks grouped by model, Opus, Sonnet, Haiku, Otros (fable); empty groups left out, order inside kept. */
+/** Tasks grouped by model, Fable, Opus, Sonnet, Haiku; empty groups left out, order inside kept. */
 export const groupByModel = (tasks: readonly ModelRouterTask[]) =>
   GROUP_ORDER.map(b => ({ b, tasks: tasks.filter(t => bucketOf(t.model) === b) })).filter(g => g.tasks.length > 0)
 

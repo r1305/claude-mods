@@ -2,7 +2,7 @@ import { test, expect, mock } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
 import type { ModelRouterDay } from '../types'
-import { addTokens, aggregate, asUsageFile, bar, dayKey, fmtDur, fmtReset, fmtTokens, health, levelColor, lastDayKeys, pct, stackCells, statusText, trimDays, weekdayShort } from './usage'
+import { addTokens, aggregate, asUsageFile, bar, bucketOf, dayKey, fmtDur, fmtReset, fmtTokens, health, levelColor, lastDayKeys, pct, stackCells, statusText, trimDays, weekdayShort } from './usage'
 import { DEFAULT_PREFS } from './quota'
 
 const TH = { warn: DEFAULT_PREFS.warn, critical: DEFAULT_PREFS.critical }
@@ -10,7 +10,7 @@ const TH = { warn: DEFAULT_PREFS.warn, critical: DEFAULT_PREFS.critical }
 const NOW = new Date(2026, 9, 12, 12, 0, 0).getTime()
 const DAY = 24 * 3600 * 1000
 
-const day = (haiku: number, sonnet = 0, opus = 0): ModelRouterDay => ({ haiku, sonnet, opus, other: 0, total: haiku + sonnet + opus })
+const day = (haiku: number, sonnet = 0, opus = 0): ModelRouterDay => ({ haiku, sonnet, opus, fable: 0, total: haiku + sonnet + opus })
 
 const PANE = {
   plugin: 'model-router',
@@ -147,8 +147,9 @@ test('status text with and without limits', () => {
 test('usage file parser rejects junk and sanitizes numbers', () => {
   expect(asUsageFile(undefined)).toBeUndefined()
   expect(asUsageFile({ days: 3 })).toBeUndefined()
-  const f = asUsageFile({ name: 'x', project: 'p', days: { '2026-10-12': { haiku: 5, sonnet: -2, opus: 'a', other: 1, total: 0 }, bad: {} } })
-  expect(f?.days).toEqual({ '2026-10-12': { haiku: 5, sonnet: 0, opus: 0, other: 1, total: 6 } })
+  const f = asUsageFile({ name: 'x', project: 'p', days: { '2026-10-12': { haiku: 5, sonnet: -2, opus: 'a', fable: 1, total: 0 }, bad: {} } })
+  expect(f?.days).toEqual({ '2026-10-12': { haiku: 5, sonnet: 0, opus: 0, fable: 1, total: 6 } })
+  expect(bucketOf('claude-fable-5-1')).toBe('fable')
 })
 
 test('usage panel with rateLimits, multi-session files and the usage command', async ($, on) => {
