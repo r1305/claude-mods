@@ -152,6 +152,15 @@ test('usage file parser rejects junk and sanitizes numbers', () => {
   expect(bucketOf('claude-fable-5-1')).toBe('fable')
 })
 
+test('usage file parser folds legacy other into fable without changing the total', () => {
+  const only = asUsageFile({ days: { '2026-10-12': { haiku: 1, sonnet: 2, opus: 3, other: 100, total: 106 } } })
+  expect(only?.days['2026-10-12']).toEqual({ haiku: 1, sonnet: 2, opus: 3, fable: 100, total: 106 })
+  const both = asUsageFile({ days: { '2026-10-12': { haiku: 1, sonnet: 0, opus: 0, fable: 40, other: 100, total: 141 } } })
+  expect(both?.days['2026-10-12']).toEqual({ haiku: 1, sonnet: 0, opus: 0, fable: 140, total: 141 })
+  const agg = aggregate([{ id: 'a', file: { name: 'x', project: 'p', days: only!.days } }], NOW)
+  expect(agg.week.fable + agg.week.haiku + agg.week.sonnet + agg.week.opus).toBe(agg.week.total)
+})
+
 test('usage panel with rateLimits, multi-session files and the usage command', async ($, on) => {
   mock.clock(on, { now: NOW })
   const k = lastDayKeys(NOW, 7)

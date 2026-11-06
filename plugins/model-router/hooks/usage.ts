@@ -118,7 +118,8 @@ export const asUsageFile = (v: unknown): ModelRouterUsageFile | undefined => {
   for (const [k, raw] of Object.entries(o.days as Record<string, unknown>)) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(k) || typeof raw !== 'object' || raw === null) continue
     const d = raw as Record<string, unknown>
-    const day = { haiku: num(d.haiku), sonnet: num(d.sonnet), opus: num(d.opus), fable: num(d.fable), total: 0 }
+    // legacy files counted Fable under `other`: fold it into fable on read
+    const day = { haiku: num(d.haiku), sonnet: num(d.sonnet), opus: num(d.opus), fable: num(d.fable) + num(d.other), total: 0 }
     day.total = Math.max(num(d.total), day.haiku + day.sonnet + day.opus + day.fable)
     days[k] = day
   }
