@@ -7,6 +7,7 @@ import {
   DEFAULT_PREFS,
   addUsage,
   alertText,
+  alertWindowsOf,
   emptyMemory,
   evaluateAlerts,
   formatClock,
@@ -141,6 +142,19 @@ test('windows: only the two plan windows are read; a missing one is Sin dato', (
   expect(alertText('five_hour', { level: 'aviso', threshold: 80 }, win(81))).not.toContain('haiku')
 })
 
+test('alert windows: the two plan windows plus opus and fable weekly, keyed by kind', () => {
+  expect(alertWindowsOf([])).toEqual({})
+  expect(alertWindowsOf([{ kind: 'spend_limit', percentUsed: 120 }, { kind: 'seven_day_opus', percentUsed: Number.NaN }])).toEqual({})
+  expect(alertWindowsOf([limit('five_hour', 10), limit('seven_day_opus', 96, B), limit('seven_day_fable', 50), { kind: 'seven_day_opus_x', percentUsed: 1 }])).toEqual({
+    five_hour: win(10),
+    seven_day_opus: win(96, B),
+    seven_day_fable: win(50),
+    seven_day_opus_x: win(1, null),
+  })
+  expect(alertText('seven_day_opus', { level: 'critico', threshold: 95 }, win(96))).toMatch(/^Crítico: Opus semanal al 96 % \(umbral 95 %\)\. Todos los agentes pasan a haiku\. Reinicia \d{2}\/\d{2} \d{2}:\d{2}$/)
+  expect(alertText('seven_day_fable', { level: 'aviso', threshold: 80 }, win(81))).toContain('Aviso: Fable semanal al 81 %')
+})
+
 test('tokens per exact model name: cache read and write stay apart and nothing is lost', () => {
   let models: ModelRouterModels = {}
   models = addUsage(models, 'modelo-a', { input_tokens: 100, output_tokens: 20, cache_read_input_tokens: 5, cache_creation_input_tokens: 1 })
@@ -264,6 +278,25 @@ test('alerts: one toast per threshold and window cycle, through the measure even
 
   await measure($, [limit('five_hour', 98)])
   expect(toasts.length).toBe(2)
+})
+
+test('alerts: opus and fable weekly limits also alert at 80 % and 95 %, once each and apart from the windows', async ($, on) => {
+  const toasts: string[] = []
+  world(on, toasts)
+  await start($)
+
+  await measure($, [limit('seven_day_opus', 79)])
+  expect(toasts).toEqual([])
+  await measure($, [limit('seven_day_opus', 85)])
+  expect(toasts.length).toBe(1)
+  expect(toasts[0]).toContain('Aviso: Opus semanal al 85 %')
+  await measure($, [limit('seven_day_opus', 96), limit('seven_day_fable', 97)])
+  expect(toasts.length).toBe(3)
+  expect(toasts[1]).toContain('Crítico: Opus semanal al 96 %')
+  expect(toasts[1]).toContain('Todos los agentes pasan a haiku')
+  expect(toasts[2]).toContain('Crítico: Fable semanal al 97 %')
+  await measure($, [limit('seven_day_opus', 98), limit('seven_day_fable', 99), limit('five_hour', 10)])
+  expect(toasts.length).toBe(3)
 })
 
 test('alerts: a new reset time raises them again, and so does a drop in the figure', async ($, on) => {

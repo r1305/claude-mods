@@ -74,7 +74,8 @@ export type ModelRouterAlertMemory = {
   fired: number[]
 }
 
-export type ModelRouterAlertMemories = Record<ModelRouterWindowKind, ModelRouterAlertMemory>
+/** Alert memory per limit kind: the two windows and any opus or fable weekly limit the plan reports. */
+export type ModelRouterAlertMemories = Record<string, ModelRouterAlertMemory>
 
 /** Session tokens of one exact model name, from turn.complete usage. */
 export type ModelRouterModelTokens = {

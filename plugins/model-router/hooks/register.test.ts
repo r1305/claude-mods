@@ -111,6 +111,27 @@ test('usage limits lower the routed model', async ($, on) => {
   expect(seen.model).toBe('haiku')
 })
 
+test('95 % of opus or fable weekly lowers every routed agent to haiku; 94 % does not', async ($, on) => {
+  mock.clock(on)
+  let rateLimits: { kind: string; percentUsed: number }[] = []
+  on('session.usage', () => ({ value: { startedAt: 0, context: { window: 1 }, rateLimits } }) as never)
+  const seen: { model?: unknown } = {}
+  engineSpawn(on, seen)
+  on('session.start', (_$, e) => ({ cwd: e.cwd }) as never)
+  for (const kind of ['seven_day_opus', 'seven_day_fable']) {
+    rateLimits = [{ kind: 'five_hour', percentUsed: 10 }, { kind, percentUsed: 94 }]
+    await $.session.start({ cwd: '/w/proyecto-a', surface: 'terminal', isInteractive: true } as never)
+    await $.agent.spawn(spawnInput({ subagentType: 'review', description: 'Review cambios', prompt: 'revisa el diff' }))
+    expect(seen.model).not.toBe('haiku')
+    rateLimits = [{ kind: 'five_hour', percentUsed: 10 }, { kind, percentUsed: 95 }]
+    await $.session.start({ cwd: '/w/proyecto-a', surface: 'terminal', isInteractive: true } as never)
+    for (const type of ['dev', 'review', 'qa', 'explorer', 'tooling', 'general-purpose']) {
+      await $.agent.spawn(spawnInput({ subagentType: type, description: 'Refactor de pagos multiarchivo', prompt: 'refactoriza el modulo de pagos' }))
+      expect(seen.model).toBe('haiku')
+    }
+  }
+})
+
 test('fork is not rewritten', async ($, on) => {
   mock.clock(on)
   const seen: { model?: unknown } = { model: 'unset' }

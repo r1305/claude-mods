@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { AgentSpawnResult, EngineInterface, Register, Timer } from 'claude-code'
 
 import type { ModelRouterAlertMemories, ModelRouterLevel, ModelRouterLimit, ModelRouterModels, ModelRouterPrefs, ModelRouterTask, ModelRouterUsageFile } from '../types'
-import { DEFAULT_PREFS, PREFS_KEY, WINDOWS, addUsage, alertText, emptyMemories, evaluateAlerts, parseCommand, parsePrefs, windowsOf } from './quota'
+import { DEFAULT_PREFS, PREFS_KEY, addUsage, alertText, alertWindowsOf, emptyMemories, emptyMemory, evaluateAlerts, parseCommand, parsePrefs } from './quota'
 import { progressOf, turnTasks } from './progress'
 import { SUPERVISE_AFTER, failedAttempts, route, routeNote } from './route'
 import {
@@ -64,7 +64,7 @@ const POLICY = [
   'Only `dev` and `review` can reach fable: dev with two or more hard signals at once (multi-file design, security/payments, production data, concurrency) or after a failed run on opus; review when the diff touches payments, auth, concurrency or production data. qa and explorer top out at sonnet, tooling at opus.',
   `After ${SUPERVISE_AFTER} failed runs of one agent (spawn denied, or its turn ended without an answer), relaunch it with the same subagent type and \`description\`: the router raises that run to opus (capped by the agent ceiling); a dev run that failed on opus is relaunched on fable.`,
   'Effort for fable runs: high by default; max only in exceptional cases.',
-  'Usage: fable weekly at 80 % or more removes fable (to opus); opus weekly at 80 % removes opus (to sonnet); 5 h or weekly at 80 % drops one step down to the agent floor; at 95 % stop starting heavy work and tell the user the reset time.',
+  'Usage: fable weekly at 80 % or more removes fable (to opus); opus weekly at 80 % removes opus (to sonnet); 5 h or weekly at 80 % drops one step down to the agent floor; at 95 % of ANY limit (5 h, weekly, opus weekly or fable weekly) every agent runs on haiku: stop starting heavy work and tell the user the reset time.',
 ].join('\n')
 
 const fileId = (id: string) => id.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 64)
@@ -124,16 +124,15 @@ async function applyLimits($: EngineInterface, rows: readonly ModelRouterLimit[]
     ...(l.resetsAt !== undefined ? { resetsAt: l.resetsAt } : {}),
   }))
   await update($, limits, () => kept).catch(() => undefined)
-  const current = windowsOf(kept)
+  const current = alertWindowsOf(kept)
   const config = await read($, prefs)
   const before = await read($, memories)
-  const after = emptyMemories()
+  const after: ModelRouterAlertMemories = { ...before }
   const messages: string[] = []
-  for (const kind of WINDOWS) {
-    const window = current[kind]
-    const result = evaluateAlerts(before[kind], window, config)
+  for (const [kind, window] of Object.entries(current)) {
+    const result = evaluateAlerts(before[kind] ?? emptyMemory(), window, config)
     after[kind] = result.memory
-    if (window !== null && result.alert !== undefined) messages.push(alertText(kind, result.alert, window))
+    if (result.alert !== undefined) messages.push(alertText(kind, result.alert, window))
   }
   await update($, memories, () => after).catch(() => undefined)
   for (const message of messages) $.ui.toast(message)

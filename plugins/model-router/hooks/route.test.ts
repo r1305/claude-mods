@@ -198,6 +198,46 @@ test('usage: at 95 % every agent type goes to haiku; below it nothing changes', 
   expect(route('review', 'Revisar', 'revisa el diff', [{ kind: 'seven_day', percentUsed: 95 }]).model).toBe('haiku')
 })
 
+test('usage: 95 % of ANY limit (5 h, weekly, opus weekly, fable weekly) sends every agent to haiku and names the limit', () => {
+  const cases: [string, string][] = [
+    ['five_hour', 'Ventana de 5 h'],
+    ['seven_day', 'Ventana semanal'],
+    ['seven_day_opus', 'Opus semanal'],
+    ['seven_day_fable', 'Fable semanal'],
+  ]
+  const agents: [string, string, string][] = [
+    ['dev', 'Refactor de pagos multiarchivo', 'refactoriza el módulo de pagos'],
+    ['qa', 'Validar con BD prod', 'valida el cambio contra la BD prod'],
+    ['review', 'Revisar', 'revisa el diff'],
+    ['explorer', 'Mapear', 'crea el mapa nuevo del proyecto'],
+    ['tooling', 'Crear skill', 'crea un skill nuevo'],
+    ['Plan', 'Plan', 'diseña la arquitectura'],
+    ['general-purpose', 'Implementar', 'implementa el helper de fechas'],
+  ]
+  for (const [kind, label] of cases) {
+    const lim = [{ kind: 'five_hour', percentUsed: kind === 'five_hour' ? 95 : 10 }, ...(kind === 'five_hour' ? [] : [{ kind, percentUsed: 95 }])]
+    for (const [type, desc, prompt] of agents) {
+      const d = route(type, desc, prompt, lim)
+      expect(d.model).toBe('haiku')
+      expect(d.reason).toContain(`${label} al 95 %`)
+    }
+    expect(routeNote(lim).level).toBe('critical')
+    expect(routeNote(lim).text).toBe(`${label} al 95 %: crítico, todos los agentes a haiku, para y avisa`)
+  }
+  expect(route('review', 'Revisar', 'revisa el diff', [{ kind: 'seven_day_opus', percentUsed: 99 }, { kind: 'five_hour', percentUsed: 97 }]).reason).toContain('Opus semanal al 99 %')
+})
+
+test('usage: just below 95 % of opus or fable weekly only removes that model', () => {
+  for (const kind of ['seven_day_opus', 'seven_day_fable']) {
+    const lim = [{ kind: 'five_hour', percentUsed: 10 }, { kind, percentUsed: 94 }]
+    expect(routeNote(lim).level).toBe('high')
+    expect(route('review', 'Revisar', 'revisa el diff', lim).model).toBe(kind === 'seven_day_opus' ? 'sonnet' : 'opus')
+    expect(route('qa', 'Validar', 'valida que compila', lim).model).toBe('haiku')
+    expect(route('dev', 'Endpoint', 'implementa el endpoint nuevo y sus tests', lim).model).toBe('sonnet')
+  }
+  expect(route('review', 'Revisar', 'revisa el diff', [{ kind: 'seven_day_opus', percentUsed: 80 }]).model).toBe('sonnet')
+})
+
 test('usage: without data nothing is lowered and the note says so', () => {
   expect(usageState(undefined).hasData).toBe(false)
   expect(usageState([{ kind: 'spend_limit', percentUsed: 99 }]).hasData).toBe(false)

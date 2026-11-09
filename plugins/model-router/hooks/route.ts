@@ -1,6 +1,6 @@
 import type { ModelRouterLevel, ModelRouterLimit, ModelRouterTask } from '../types'
 import { CONC, PROD, RISK, STRONG, classify, classifyDefault, head } from './classify'
-import { DEFAULT_PREFS } from './quota'
+import { DEFAULT_PREFS, limitLabel } from './quota'
 import type { Thresholds } from './quota'
 
 export const LEVELS: ModelRouterLevel[] = ['haiku', 'sonnet', 'opus', 'fable']
@@ -60,7 +60,14 @@ export const DEFAULT_RULE: AgentRule = { base: 'haiku', floor: 'haiku', ceiling:
 
 export const ruleFor = (subagentType: string) => RULES[subagentType.trim().toLowerCase()] ?? DEFAULT_RULE
 
-export type UsageState = { hasData: boolean; general: number; opusWeekly: number | undefined; fableWeekly?: number }
+export type UsageState = {
+  hasData: boolean
+  general: number
+  opusWeekly: number | undefined
+  fableWeekly?: number
+  /** The fullest of all counted limits (5 h, weekly, opus weekly, fable weekly): it decides the critical step. */
+  peak?: { kind: string; percent: number }
+}
 
 const GENERAL_KINDS = new Set(['five_hour', 'seven_day'])
 
@@ -71,8 +78,11 @@ export function usageState(limits: readonly ModelRouterLimit[] | undefined): Usa
   const general = list.filter(l => GENERAL_KINDS.has(l.kind))
   const opus = list.filter(l => /opus/i.test(l.kind))
   const fable = list.filter(l => /fable/i.test(l.kind))
+  const counted = [...general, ...opus, ...fable]
+  const peak = counted.reduce<ModelRouterLimit | undefined>((m, l) => (m === undefined || l.percentUsed > m.percentUsed ? l : m), undefined)
   return {
-    hasData: general.length > 0 || opus.length > 0 || fable.length > 0,
+    hasData: counted.length > 0,
+    ...(peak ? { peak: { kind: peak.kind, percent: peak.percentUsed } } : {}),
     general: maxOf(general) ?? 0,
     opusWeekly: maxOf(opus),
     ...(fable.length > 0 ? { fableWeekly: maxOf(fable) } : {}),
@@ -83,20 +93,22 @@ export function applyUsage(level: ModelRouterLevel, floor: ModelRouterLevel, u: 
   const notes: string[] = []
   let out = level
   if (u.hasData) {
-    if (u.general >= th.critical) {
+    if (u.peak !== undefined && u.peak.percent >= th.critical) {
       out = 'haiku'
-      notes.push(`uso ${Math.round(u.general)} % → crítico: todos los agentes a haiku, para y avisa`)
-    } else if (u.general >= th.warn) {
-      out = at(Math.max(rank(floor), rank(level) - 1))
-      if (out !== level) notes.push(`uso ${Math.round(u.general)} % → un escalón menos`)
-    }
-    if (u.fableWeekly !== undefined && u.fableWeekly >= th.warn && out === 'fable') {
-      out = 'opus'
-      notes.push(`fable semanal ${Math.round(u.fableWeekly)} % → sin fable`)
-    }
-    if (u.opusWeekly !== undefined && u.opusWeekly >= th.warn && out === 'opus') {
-      out = 'sonnet'
-      notes.push(`opus semanal ${Math.round(u.opusWeekly)} % → sin opus`)
+      notes.push(`${limitLabel(u.peak.kind)} al ${Math.round(u.peak.percent)} % → crítico: todos los agentes a haiku, para y avisa`)
+    } else {
+      if (u.general >= th.warn) {
+        out = at(Math.max(rank(floor), rank(level) - 1))
+        if (out !== level) notes.push(`uso ${Math.round(u.general)} % → un escalón menos`)
+      }
+      if (u.fableWeekly !== undefined && u.fableWeekly >= th.warn && out === 'fable') {
+        out = 'opus'
+        notes.push(`fable semanal ${Math.round(u.fableWeekly)} % → sin fable`)
+      }
+      if (u.opusWeekly !== undefined && u.opusWeekly >= th.warn && out === 'opus') {
+        out = 'sonnet'
+        notes.push(`opus semanal ${Math.round(u.opusWeekly)} % → sin opus`)
+      }
     }
   } else {
     notes.push('sin datos de uso')
@@ -157,20 +169,20 @@ export function routeNote(limits: readonly ModelRouterLimit[] | undefined, th: T
   if (!u.hasData) return { text: 'sin datos de uso: no baja de modelo por límites', level: 'none' as const }
   const parts: string[] = []
   let level: 'ok' | 'high' | 'critical' = 'ok'
-  if (u.general >= th.critical) {
-    parts.push(`uso al ${Math.round(u.general)} %: crítico, todos los agentes a haiku, para y avisa`)
-    level = 'critical'
-  } else if (u.general >= th.warn) {
+  if (u.peak !== undefined && u.peak.percent >= th.critical) {
+    return { text: `${limitLabel(u.peak.kind)} al ${Math.round(u.peak.percent)} %: crítico, todos los agentes a haiku, para y avisa`, level: 'critical' as const }
+  }
+  if (u.general >= th.warn) {
     parts.push(`uso al ${Math.round(u.general)} %: baja un escalón`)
     level = 'high'
   }
   if (u.fableWeekly !== undefined && u.fableWeekly >= th.warn) {
     parts.push(`fable semanal al ${Math.round(u.fableWeekly)} %: sin fable`)
-    if (level === 'ok') level = 'high'
+    level = 'high'
   }
   if (u.opusWeekly !== undefined && u.opusWeekly >= th.warn) {
     parts.push(`opus semanal al ${Math.round(u.opusWeekly)} %: sin opus`)
-    if (level === 'ok') level = 'high'
+    level = 'high'
   }
   if (parts.length === 0) return { text: 'elige el modelo de todos los subagentes', level }
   return { text: parts.join(' · '), level }

@@ -43,6 +43,14 @@ export const LABELS: Record<ModelRouterWindowKind, string> = {
   seven_day: 'Ventana semanal',
 }
 
+/** Human name of a plan limit: the two windows, and the opus and fable weekly ones. */
+export function limitLabel(kind: string): string {
+  if (kind === 'five_hour' || kind === 'seven_day') return LABELS[kind]
+  if (/opus/i.test(kind)) return 'Opus semanal'
+  if (/fable/i.test(kind)) return 'Fable semanal'
+  return kind
+}
+
 export const DEFAULT_PREFS: ModelRouterPrefs = { alerts: true, warn: 80, critical: 95 }
 
 export const PREFS_KEY = 'prefs'
@@ -71,6 +79,17 @@ export function windowsOf(rows: readonly LimitRow[]): QuotaWindows {
   const out = emptyWindows()
   for (const row of rows) {
     if (!isWindowKind(row.kind)) continue
+    if (typeof row.percentUsed !== 'number' || !Number.isFinite(row.percentUsed)) continue
+    out[row.kind] = { percentUsed: row.percentUsed, resetsAt: typeof row.resetsAt === 'string' ? row.resetsAt : null }
+  }
+  return out
+}
+
+/** Every limit that carries alerts, keyed by its exact kind: the two windows plus any opus or fable one. */
+export function alertWindowsOf(rows: readonly LimitRow[]): Record<string, QuotaWindow> {
+  const out: Record<string, QuotaWindow> = {}
+  for (const row of rows) {
+    if (!isWindowKind(row.kind) && !/opus|fable/i.test(row.kind)) continue
     if (typeof row.percentUsed !== 'number' || !Number.isFinite(row.percentUsed)) continue
     out[row.kind] = { percentUsed: row.percentUsed, resetsAt: typeof row.resetsAt === 'string' ? row.resetsAt : null }
   }
@@ -136,17 +155,17 @@ export function formatClock(iso: string | null, withDate = false): string {
   return withDate ? `${pad(at.getDate())}/${pad(at.getMonth() + 1)} ${clock}` : clock
 }
 
-export const resetHasDate = (kind: ModelRouterWindowKind): boolean => kind === 'seven_day'
+export const resetHasDate = (kind: string): boolean => kind !== 'five_hour'
 
 export function alertsLine(prefs: ModelRouterPrefs): string {
   return `Alertas: ${prefs.alerts ? 'activadas' : 'ocultas'} · aviso ${prefs.warn} % · crítico ${prefs.critical} %`
 }
 
-export function alertText(kind: ModelRouterWindowKind, alert: Alert, window: QuotaWindow): string {
+export function alertText(kind: string, alert: Alert, window: QuotaWindow): string {
   const word = alert.level === 'critico' ? 'Crítico' : 'Aviso'
   const reset = window.resetsAt === null ? '' : `. Reinicia ${formatClock(window.resetsAt, resetHasDate(kind))}`
   const effect = alert.level === 'critico' ? '. Todos los agentes pasan a haiku' : ''
-  return `${word}: ${LABELS[kind]} al ${formatPercent(window.percentUsed)} (umbral ${alert.threshold} %)${effect}${reset}`
+  return `${word}: ${limitLabel(kind)} al ${formatPercent(window.percentUsed)} (umbral ${alert.threshold} %)${effect}${reset}`
 }
 
 export function windowLine(kind: ModelRouterWindowKind, window: QuotaWindow | null, th: Thresholds): string {
