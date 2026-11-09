@@ -137,6 +137,8 @@ test('windows: only the two plan windows are read; a missing one is Sin dato', (
   expect(formatClock(null)).toBe('Sin dato')
   expect(formatClock('no es fecha')).toBe('Sin dato')
   expect(alertText('seven_day', { level: 'critico', threshold: 90 }, win(91))).toContain('Crítico: Ventana semanal al 91 %')
+  expect(alertText('seven_day', { level: 'critico', threshold: 90 }, win(91))).toContain('Todos los agentes pasan a haiku')
+  expect(alertText('five_hour', { level: 'aviso', threshold: 80 }, win(81))).not.toContain('haiku')
 })
 
 test('tokens per exact model name: cache read and write stay apart and nothing is lost', () => {
@@ -258,6 +260,7 @@ test('alerts: one toast per threshold and window cycle, through the measure even
   await measure($, [limit('five_hour', 95)])
   expect(toasts.length).toBe(2)
   expect(toasts[1]).toContain('Crítico')
+  expect(toasts[1]).toContain('Todos los agentes pasan a haiku')
 
   await measure($, [limit('five_hour', 98)])
   expect(toasts.length).toBe(2)

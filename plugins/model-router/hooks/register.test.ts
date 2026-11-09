@@ -108,7 +108,7 @@ test('usage limits lower the routed model', async ($, on) => {
   await $.agent.spawn(spawnInput({ subagentType: 'dev', description: 'Refactor de pagos multiarchivo', prompt: 'refactoriza el modulo de pagos' }))
   expect(seen.model).toBe('haiku')
   await $.agent.spawn(spawnInput({ subagentType: 'review', description: 'Review cambios', prompt: 'revisa el diff' }))
-  expect(seen.model).toBe('sonnet')
+  expect(seen.model).toBe('haiku')
 })
 
 test('fork is not rewritten', async ($, on) => {

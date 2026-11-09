@@ -145,7 +145,8 @@ export function alertsLine(prefs: ModelRouterPrefs): string {
 export function alertText(kind: ModelRouterWindowKind, alert: Alert, window: QuotaWindow): string {
   const word = alert.level === 'critico' ? 'Crítico' : 'Aviso'
   const reset = window.resetsAt === null ? '' : `. Reinicia ${formatClock(window.resetsAt, resetHasDate(kind))}`
-  return `${word}: ${LABELS[kind]} al ${formatPercent(window.percentUsed)} (umbral ${alert.threshold} %)${reset}`
+  const effect = alert.level === 'critico' ? '. Todos los agentes pasan a haiku' : ''
+  return `${word}: ${LABELS[kind]} al ${formatPercent(window.percentUsed)} (umbral ${alert.threshold} %)${effect}${reset}`
 }
 
 export function windowLine(kind: ModelRouterWindowKind, window: QuotaWindow | null, th: Thresholds): string {

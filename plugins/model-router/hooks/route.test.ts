@@ -102,7 +102,7 @@ test('usage: fable drops a step and its own weekly limit removes it', () => {
   expect(applyUsage('fable', 'haiku', usageState([{ kind: 'seven_day_fable', percentUsed: 85 }])).level).toBe('opus')
   expect(applyUsage('fable', 'haiku', usageState([{ kind: 'seven_day_fable', percentUsed: 85 }, { kind: 'seven_day_opus', percentUsed: 90 }])).level).toBe('sonnet')
   expect(applyUsage('fable', 'haiku', usageState([{ kind: 'five_hour', percentUsed: 10 }])).level).toBe('fable')
-  expect(applyUsage('fable', 'sonnet', usageState([{ kind: 'five_hour', percentUsed: 96 }])).level).toBe('sonnet')
+  expect(applyUsage('fable', 'sonnet', usageState([{ kind: 'five_hour', percentUsed: 96 }])).level).toBe('haiku')
 })
 
 test('classify: word boundaries avoid false positives', () => {
@@ -142,8 +142,11 @@ test('route: an explicit model is recorded, not obeyed', () => {
   expect(d.reason).toContain('pedido opus (ignorado)')
 })
 
-test('usage: review never drops under sonnet', () => {
-  for (const p of [0, 50, 80, 90, 95, 99]) {
+test('usage: review never drops under sonnet below 95 %; from 95 % it goes to haiku', () => {
+  for (const p of [95, 99]) {
+    expect(route('review', 'Revisar', 'revisa el diff', [{ kind: 'five_hour', percentUsed: p }]).model).toBe('haiku')
+  }
+  for (const p of [0, 50, 80, 90, 94]) {
     expect(route('review', 'Buscar', 'busca el helper', [{ kind: 'five_hour', percentUsed: p }]).model).not.toBe('haiku')
     expect(route('review', 'Revisar', 'revisa el diff', [{ kind: 'seven_day', percentUsed: p }]).model).not.toBe('haiku')
   }
@@ -156,7 +159,7 @@ test('usage: weekly opus at 80% or more removes opus', () => {
   expect(routeNote(lim).text).toContain('sin opus')
 })
 
-test('usage: aviso (80 %) drops one step, crítico (95 %, default) sends everything to haiku except the floor and says stop', () => {
+test('usage: aviso (80 %) drops one step, crítico (95 %, default) sends every agent to haiku (no floor exception) and says stop', () => {
   expect(route('dev', 'Refactor de pagos multiarchivo', 'refactoriza el módulo de pagos', [{ kind: 'five_hour', percentUsed: 92 }]).model).toBe('sonnet')
   expect(route('dev', 'Refactor de pagos multiarchivo', 'refactoriza el módulo de pagos', [{ kind: 'five_hour', percentUsed: 95 }]).reason).toContain('para y avisa')
   expect(routeNote([{ kind: 'five_hour', percentUsed: 95 }]).text).toContain('para y avisa')
@@ -168,10 +171,31 @@ test('usage: aviso (80 %) drops one step, crítico (95 %, default) sends everyth
   const crit = [{ kind: 'five_hour', percentUsed: 96 }]
   expect(route('dev', 'Refactor de pagos multiarchivo', 'refactoriza el módulo de pagos', crit).model).toBe('haiku')
   expect(route('qa', 'Validar con BD prod', 'valida el cambio contra la BD prod', crit).model).toBe('haiku')
-  expect(route('review', 'Revisar', 'revisa el diff', crit).model).toBe('sonnet')
+  expect(route('review', 'Revisar', 'revisa el diff', crit).model).toBe('haiku')
   expect(route('Plan', 'Plan', 'diseña la arquitectura', crit).model).toBe('haiku')
   expect(routeNote(crit).level).toBe('critical')
-  expect(routeNote(crit).text).toContain('todo a haiku salvo suelos')
+  expect(routeNote(crit).text).toContain('todos los agentes a haiku')
+  expect(route('review', 'Revisar', 'revisa el diff', crit).reason).toContain('todos los agentes a haiku')
+})
+
+test('usage: at 95 % every agent type goes to haiku; below it nothing changes', () => {
+  const at95 = [{ kind: 'five_hour', percentUsed: 95 }]
+  const below = [{ kind: 'five_hour', percentUsed: 79 }]
+  const cases: [string, string, string][] = [
+    ['dev', 'Refactor de pagos multiarchivo', 'refactoriza el módulo de pagos'],
+    ['qa', 'Validar con BD prod', 'valida el cambio contra la BD prod'],
+    ['review', 'Revisar', 'revisa el diff'],
+    ['explorer', 'Mapear', 'crea el mapa nuevo del proyecto'],
+    ['tooling', 'Crear skill', 'crea un skill nuevo'],
+    ['Plan', 'Plan', 'diseña la arquitectura'],
+    ['general-purpose', 'Implementar', 'implementa el helper de fechas'],
+  ]
+  for (const [type, desc, prompt] of cases) {
+    expect(route(type, desc, prompt, at95).model).toBe('haiku')
+    expect(route(type, desc, prompt, below).model).toBe(route(type, desc, prompt, [{ kind: 'five_hour', percentUsed: 10 }]).model)
+  }
+  expect(route('review', 'Revisar', 'revisa el diff', below).model).toBe('opus')
+  expect(route('review', 'Revisar', 'revisa el diff', [{ kind: 'seven_day', percentUsed: 95 }]).model).toBe('haiku')
 })
 
 test('usage: without data nothing is lowered and the note says so', () => {

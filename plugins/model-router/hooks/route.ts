@@ -84,8 +84,8 @@ export function applyUsage(level: ModelRouterLevel, floor: ModelRouterLevel, u: 
   let out = level
   if (u.hasData) {
     if (u.general >= th.critical) {
-      out = floor
-      notes.push(`uso ${Math.round(u.general)} % → ${out !== level ? 'haiku/suelo, ' : ''}para y avisa`)
+      out = 'haiku'
+      notes.push(`uso ${Math.round(u.general)} % → crítico: todos los agentes a haiku, para y avisa`)
     } else if (u.general >= th.warn) {
       out = at(Math.max(rank(floor), rank(level) - 1))
       if (out !== level) notes.push(`uso ${Math.round(u.general)} % → un escalón menos`)
@@ -158,7 +158,7 @@ export function routeNote(limits: readonly ModelRouterLimit[] | undefined, th: T
   const parts: string[] = []
   let level: 'ok' | 'high' | 'critical' = 'ok'
   if (u.general >= th.critical) {
-    parts.push(`uso al ${Math.round(u.general)} %: todo a haiku salvo suelos, para y avisa`)
+    parts.push(`uso al ${Math.round(u.general)} %: crítico, todos los agentes a haiku, para y avisa`)
     level = 'critical'
   } else if (u.general >= th.warn) {
     parts.push(`uso al ${Math.round(u.general)} %: baja un escalón`)

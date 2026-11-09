@@ -1,12 +1,12 @@
 # Model router
 
-Mod de Claude Code (0.14.1) para Claude Desktop (pestaña Code) y terminal.
+Mod de Claude Code (0.15.0) para Claude Desktop (pestaña Code) y terminal.
 
 Elige el modelo (haiku, sonnet, opus o fable) de cada subagente según una tabla de suelos por agente, la complejidad de la tarea y los límites de uso de la cuenta. Muestra un único panel de cuotas y consumo: límites de 5 h y semanal, alertas, tokens por modelo y consumo por día y por sesión.
 
 ## Qué hace
 
-- **Enrutado de subagentes**: reescribe el `model` de cada llamada Agent (salvo forks y agentes de flujo). Con uso alto baja un escalón; con uso crítico, todo a haiku salvo los suelos.
+- **Enrutado de subagentes**: reescribe el `model` de cada llamada Agent (salvo forks y agentes de flujo). Con uso alto baja un escalón; con uso crítico (95 %), todos los agentes a haiku sin excepción (también review) y aviso emergente.
 - **Panel principal** (pane `model-router`): estado del enrutado (Activo/Pausado y botón), semáforo, medidores de 5 h y semanal con «se reinicia en», el consumo de hoy y 7 días. Lo que ya muestra savvy-progress (plan, costo, contexto, tiempo por agente) no se repite. En el escritorio los medidores son barras SVG animadas de estilo neón: íconos animados (núcleo girando y check al terminar, reloj y escudo en límites, radar de esfuerzo, glifo por modelo), barra de tarea con un segmento por subagente, escaneo mientras corren y pulso al 100 %, modo oscuro por defecto y `prefers-reduced-motion`; en terminal, barras de texto con ◉/✓. El detalle de consumo (tokens por modelo exacto, por día, por sesión) está en `/quota`.
 - **Tareas en progreso** (bloque siempre visible del panel): los subagentes del turno actual agrupados por modelo (Opus, Sonnet, Haiku; cabecera con su color, glifo y número de tareas) y una fila por tarea con descripción, esfuerzo en letra pequeña con color (low verde, medium ámbar, high/xhigh/max rojo, desconocido `—` gris; mismas constantes `EFFORT_COLOR` en escritorio y terminal) y estado (en curso, hecha, error); en curso primero dentro de cada grupo. Si el modelo de la sesión principal se conoce, añade la fila `Principal · <modelo> · <esfuerzo>`. Cada prompt nuevo reinicia la lista; sin subagentes muestra «Sin tareas en este turno».
 - **Vista de tokens** (pane `model-router-tokens`, con `/model-router tokens` o la tecla `t` del panel): tokens de hoy y de 7 días por familia (Haiku, Sonnet, Opus, Fable, todas las sesiones con el mod) con barra de reparto semanal, y los tokens de esta sesión por nombre exacto de modelo, en filas con glifo y barra de reparto entre entrada, salida y caché. Se actualiza tras cada turno.
@@ -39,7 +39,7 @@ Cada tarea entra por su nivel y nunca pasa el techo del agente. Solo `dev` y `re
 | tooling | sonnet (haiku al solo actualizar) | — | nunca | opus |
 | plan y genéricos | según la tarea | arquitectura, causa raíz, dominio sensible | nunca | opus |
 
-Límites: fable semanal ≥ 80 % → fable pasa a opus (dev y review); opus semanal ≥ 80 % → opus pasa a sonnet; 5 h o semanal general ≥ 80 % → un escalón menos sin pasar del suelo; ≥ 95 % → todo al suelo, para y avisa. Esfuerzo de fable: high por defecto, max solo excepcional (indicación al orquestador; el mod no fija el esfuerzo del subagente).
+Límites: fable semanal ≥ 80 % → fable pasa a opus (dev y review); opus semanal ≥ 80 % → opus pasa a sonnet; 5 h o semanal general ≥ 80 % → un escalón menos sin pasar del suelo; ≥ 95 % → todos los agentes a haiku (sin excepción, el suelo deja de aplicar), notificación emergente, para y avisa. Esfuerzo de fable: high por defecto, max solo excepcional (indicación al orquestador; el mod no fija el esfuerzo del subagente).
 
 **Rescate tras fallos.** Tras dos ejecuciones fallidas de un mismo agente (spawn denegado, o turno terminado sin respuesta) con el mismo tipo de agente y la misma `description`, la siguiente ejecución sube a opus, limitado por el techo del agente (qa y explorer: sonnet). Una ejecución de `dev` que falló en opus se relanza en fable. Los límites de uso siguen aplicando (fable semanal en aviso → opus; uso general en aviso → un escalón menos). El panel y la vista de tokens muestran las cuatro familias: Haiku, Sonnet, Opus y Fable.
 
@@ -64,11 +64,13 @@ Límites: fable semanal ≥ 80 % → fable pasa a opus (dev y review); opus sema
 | --- | --- | --- | --- |
 | normal | por debajo del aviso | verde, ● normal | sin cambio |
 | aviso | desde el aviso (80 % por defecto) | amarillo, ▲ aviso | un escalón menos; sin opus si un límite de opus está en aviso |
-| crítico | desde el crítico (95 % por defecto) | rojo, ■ crítico | todo a haiku salvo los suelos; para y avisa |
+| crítico | desde el crítico (95 % por defecto) | rojo, ■ crítico | todos los agentes a haiku, sin excepción (el suelo no aplica); para y avisa |
 
 Las preferencias (alertas y umbrales) se guardan con `$.store` bajo la clave `prefs`. Si no existen, si no se pueden leer o si son inválidas (aviso no menor que crítico, valores fuera de 1 a 100), se usan 80 y 95.
 
 **Cambio de comportamiento respecto a 0.5.2**: el enrutado bajaba a haiku al 95 % de uso general; ahora baja al umbral crítico configurado (95 % por defecto desde 0.14.0; antes 90 %). El semáforo de 60 % y 95 % fijos ya no existe.
+
+**Cambio de comportamiento en 0.15.0**: al nivel crítico (95 % por defecto) todos los agentes bajan a haiku, también los que tenían suelo superior (review y los configurados con suelo sonnet). La razón del enrutado y la línea del panel lo dicen (`todos los agentes a haiku`) y el aviso emergente crítico añade `Todos los agentes pasan a haiku`. Por debajo del crítico el comportamiento no cambia.
 
 ## Alertas
 
@@ -104,7 +106,7 @@ Las cifras cubren los turnos vistos desde que empezó la sesión; no se reconstr
 
 ## Estructura
 
-- `.claude-plugin/plugin.json`: manifiesto, versión 0.14.1, contrato de estado en `types/index.d.ts`.
+- `.claude-plugin/plugin.json`: manifiesto, versión 0.15.0, contrato de estado en `types/index.d.ts`.
 - `hooks/hooks.json`: módulo de hooks `./register.tsx`.
 - `hooks/register.tsx`: hooks y cableado (`session.start`, `session.measure`, `turn.complete`, `agent.spawn`, `command.run` de `/model-router` y `/quota`, `ui.render` de los panes `model-router`, `model-router-tokens` y `model-router-history`, `prompt.compose`).
 - `hooks/quota.ts`: lógica pura de límites, umbrales, alertas, preferencias, tokens por modelo y comandos.
