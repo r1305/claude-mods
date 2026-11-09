@@ -4,7 +4,7 @@ export const STRONG =
   /\barquitectur\w*|\barchitect\w*|\brediseñ\w*|\bredesign\w*|\broot cause\b|\bcausa ra[ií]z\b|\bsin causa\b|\bunknown cause\b|\bintermitentes?\b|\bflaky\b|\brace conditions?\b|\bcondici[oó]n(es)? de carrera\b|\bdeadlocks?\b|\bdebug\w*|\bdepur\w*|\binvestig\w*|\banaliz\w*|\boptimiz\w*|\brendimiento\b|\bperformance\b|\bN\+1\b|\bmulti-?(archivos?|files?|m[oó]dulos?|modules?)\b|\bvarios (archivos|m[oó]dulos)\b|\bacross (files|modules)\b/i
 
 export const DOMAIN =
-  /\bauth(n|z|entication|orization)?\b|\bautenticaci\w*|\bautorizaci\w*|\boauth\w*|\bjwt\b|\bpasswords?\b|\bcontraseñ\w*|\bpermis\w*|\bvulnerab\w*|\bcifrad\w*|\bencrypt\w*|\binyecci\w*|\binjection\b|\bIDOR\b|\bXSS\b|\bseguridad\b|\bsecurity\b|\bpagos?\b|\bpayments?\b|\bcheckout\b|\bbilling\b|\bcobros?\b|\bconcurren\w*|\btransacci\w*|\btransactions?\b|(?<![\w-])lock(s|ing)?\b|\bmigraci\w*|\bmigrations?\b|\brefactor\w*/i
+  /\bauth(n|z|entication|orization)?\b|\bautenticaci\w*|\bautorizaci\w*|\boauth\w*|\bjwt\b|\bpasswords?\b|\bcontraseñ\w*|\bpermis\w*|\bvulnerab\w*|\bcifrad\w*|\bencrypt\w*|\binyecci\w*|\binjection\b|\bIDOR\b|\bXSS\b|\bseguridad\b|\bsecurity\b|\bpagos?\b|\bpayments?\b|\bculqi\b|\bcheckout\b|\bbilling\b|\bcobros?\b|\bconcurren\w*|\btransacci\w*|\btransactions?\b|(?<![\w-])lock(s|ing)?\b|\bmigraci\w*|\bmigrations?\b|\brefactor\w*/i
 
 export const SAFE = /\bcopias? de seguridad\b|\bbackups?\b/gi
 
@@ -43,9 +43,9 @@ export const ESCALATE =
 
 const ARCH = /\barquitectur\w*|\barchitect\w*|\bdiseñ\w*|\bdesign\w*|\brediseñ\w*|\bredesign\w*/i
 const MULTI = /\bmulti-?(archivos?|files?|m[oó]dulos?|modules?)\b|\bvarios (archivos|m[oó]dulos)\b|\bacross (files|modules)\b/i
-const RISK = /\bauth(n|z|entication|orization)?\b|\bautenticaci\w*|\bseguridad\b|\bsecurity\b|\bvulnerab\w*|\bpagos?\b|\bpayments?\b|\bcheckout\b|\bbilling\b|\bcobros?\b/i
-const PROD = /\b(bd|db|base de datos|datos) (de |en )?prod\w*|\bproduction (db|database|data)\b|\bprod(uction)? (db|database|data)\b/i
-const CONC = /\bconcurren\w*|\brace conditions?\b|\bcondici[oó]n(es)? de carrera\b|\bdeadlocks?\b|\btransacci\w*|\btransactions?\b/i
+export const RISK = /\bauth(n|z|entication|orization)?\b|\bautenticaci\w*|\bseguridad\b|\bsecurity\b|\bvulnerab\w*|\bpagos?\b|\bpayments?\b|\bculqi\b|\bcheckout\b|\bbilling\b|\bcobros?\b/i
+export const PROD = /\b(bd|db|base de datos|datos) (de |en )?prod\w*|\bproduction (db|database|data)\b|\bprod(uction)? (db|database|data)\b/i
+export const CONC = /\bconcurren\w*|\brace conditions?\b|\bcondici[oó]n(es)? de carrera\b|\bdeadlocks?\b|\btransacci\w*|\btransactions?\b/i
 
 export const isGoat = (intro: string, all: string) =>
   ESCALATE.test(all) || (CHANGE_VERB.test(intro) && [ARCH.test(intro) && MULTI.test(intro), RISK.test(intro), PROD.test(intro), CONC.test(intro)].filter(Boolean).length >= 2)

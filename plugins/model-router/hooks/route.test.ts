@@ -28,28 +28,54 @@ test('classify: GOAT tier (fable) needs an escalation or two hard signals in the
   expect(classify('Buscar arquitectura', 'busca dónde se define la arquitectura de pagos en varios módulos')).not.toBe('fable')
 })
 
-test('route: only dev reaches fable', () => {
+test('route: only dev and review reach fable', () => {
   const goat = ['Rediseño multiarchivo de pagos', 'rediseña la arquitectura de pagos en varios módulos'] as const
-  for (const t of ['review', 'Plan', 'general-purpose', 'qa', 'explorer', 'tooling']) {
+  for (const t of ['Plan', 'general-purpose', 'qa', 'explorer', 'tooling']) {
     expect(route(t, goat[0], goat[1], []).model).not.toBe('fable')
+    expect(route(t, goat[0], goat[1], [], undefined, undefined, 5, true).model).not.toBe('fable')
   }
   expect(route('dev', goat[0], goat[1], []).model).toBe('fable')
   expect(route('dev', goat[0], goat[1], [{ kind: 'seven_day_fable', percentUsed: 85 }]).model).toBe('opus')
   expect(route('dev', goat[0], goat[1], [{ kind: 'five_hour', percentUsed: 85 }]).model).toBe('opus')
-  expect(route('review', goat[0], goat[1], []).model).toBe('opus')
+  expect(route('review', goat[0], goat[1], []).model).toBe('fable')
   expect(route('qa', goat[0], goat[1], []).model).toBe('sonnet')
 })
 
-test('route: after two failed runs fable supervises the relaunch of any agent, usage limits still apply', () => {
+test('route: review goes to fable only when the diff touches payments, auth, concurrency or production data', () => {
+  expect(route('review', 'Revisar cambios', 'revisa el diff de la rama', []).model).toBe('opus')
+  expect(route('review', 'Revisar Culqi', 'revisa el diff de la integración con Culqi', []).model).toBe('fable')
+  expect(route('review', 'Revisar login', 'revisa el diff del auth de la API', []).model).toBe('fable')
+  expect(route('review', 'Revisar cola', 'revisa el diff, toca la concurrencia de reservas', []).model).toBe('fable')
+  expect(route('review', 'Revisar script', 'revisa el script que corrige datos de producción', []).model).toBe('fable')
+  expect(route('review', 'Revisar causa raíz', 'revisa la causa raíz del error intermitente', []).model).toBe('opus')
+  expect(route('review', 'Revisar pagos', 'revisa el diff de pagos', [{ kind: 'seven_day_fable', percentUsed: 80 }]).model).toBe('opus')
+  expect(route('review', 'Revisar pagos', 'revisa el diff de pagos', [{ kind: 'seven_day_fable', percentUsed: 80 }, { kind: 'seven_day_opus', percentUsed: 80 }]).model).toBe('sonnet')
+})
+
+test('route: ceilings per agent (qa and explorer sonnet, tooling opus)', () => {
+  const heavy = ['Rediseño multiarchivo de pagos', 'rediseña la arquitectura de pagos en varios módulos en la BD prod'] as const
+  expect(route('qa', heavy[0], heavy[1], [], undefined, undefined, 3).model).toBe('sonnet')
+  expect(route('explorer', heavy[0], heavy[1], [], undefined, undefined, 3).model).toBe('sonnet')
+  expect(route('tooling', 'Crear skill', 'crea el skill run-app', []).model).toBe('sonnet')
+  expect(route('tooling', 'Crear skill', 'crea el skill run-app', [], undefined, undefined, 2).model).toBe('opus')
+})
+
+test('route: after two failed runs the relaunch goes to opus capped by the ceiling; dev after an opus failure goes to fable', () => {
   const qa = ['Validar login', 'valida el flujo de login'] as const
   expect(route('qa', qa[0], qa[1], [], undefined, undefined, 1).model).toBe('haiku')
-  for (const t of ['qa', 'review', 'explorer', 'tooling', 'dev']) {
-    const d = route(t, qa[0], qa[1], [], undefined, undefined, 2)
-    expect(d.model).toBe('fable')
-    expect(d.reason).toContain('supervisor fable tras 2 intentos fallidos')
-  }
-  expect(route('qa', qa[0], qa[1], [{ kind: 'seven_day_fable', percentUsed: 85 }], undefined, undefined, 2).model).toBe('opus')
-  expect(route('qa', qa[0], qa[1], [{ kind: 'five_hour', percentUsed: 96 }], undefined, undefined, 3).model).toBe('haiku')
+  const d = route('qa', qa[0], qa[1], [], undefined, undefined, 2)
+  expect(d.model).toBe('sonnet')
+  expect(d.reason).toContain('supervisor sonnet tras 2 intentos fallidos')
+  for (const t of ['review', 'tooling', 'dev']) expect(route(t, qa[0], qa[1], [], undefined, undefined, 2).model).toBe('opus')
+  const dev = ['Refactor de pagos multiarchivo', 'refactoriza el módulo de pagos'] as const
+  expect(route('dev', dev[0], dev[1], []).model).toBe('opus')
+  const after = route('dev', dev[0], dev[1], [], undefined, undefined, 1, true)
+  expect(after.model).toBe('fable')
+  expect(after.reason).toContain('fable tras fallo de opus')
+  expect(route('review', dev[0], dev[1], [], undefined, undefined, 1, true).model).toBe('fable')
+  expect(route('review', 'Revisar', 'revisa el diff', [], undefined, undefined, 1, true).model).toBe('opus')
+  expect(route('dev', dev[0], dev[1], [{ kind: 'seven_day_fable', percentUsed: 85 }], undefined, undefined, 1, true).model).toBe('opus')
+  expect(route('dev', dev[0], dev[1], [{ kind: 'five_hour', percentUsed: 96 }], undefined, undefined, 1, true).model).toBe('haiku')
 })
 
 test('failedAttempts: counts errors of the same agent type and description only', () => {
@@ -66,6 +92,8 @@ test('failedAttempts: counts errors of the same agent type and description only'
   expect(failedAttempts(tasks, 'qa', 'Validar login')).toBe(2)
   expect(failedAttempts(tasks, 'dev', 'Validar login')).toBe(1)
   expect(failedAttempts(tasks, 'qa', '')).toBe(0)
+  expect(failedAttempts(tasks, 'qa', 'Validar login', 'sonnet')).toBe(2)
+  expect(failedAttempts(tasks, 'qa', 'Validar login', 'opus')).toBe(0)
   expect(SUPERVISE_AFTER).toBe(2)
 })
 
@@ -128,7 +156,11 @@ test('usage: weekly opus at 80% or more removes opus', () => {
   expect(routeNote(lim).text).toContain('sin opus')
 })
 
-test('usage: aviso (80 %) drops one step, crítico (90 %, default) sends everything to haiku except the floor', () => {
+test('usage: aviso (80 %) drops one step, crítico (95 %, default) sends everything to haiku except the floor and says stop', () => {
+  expect(route('dev', 'Refactor de pagos multiarchivo', 'refactoriza el módulo de pagos', [{ kind: 'five_hour', percentUsed: 92 }]).model).toBe('sonnet')
+  expect(route('dev', 'Refactor de pagos multiarchivo', 'refactoriza el módulo de pagos', [{ kind: 'five_hour', percentUsed: 95 }]).reason).toContain('para y avisa')
+  expect(routeNote([{ kind: 'five_hour', percentUsed: 95 }]).text).toContain('para y avisa')
+  expect(routeNote([{ kind: 'seven_day_fable', percentUsed: 80 }]).text).toContain('sin fable')
   const high = [{ kind: 'seven_day', percentUsed: 85 }]
   expect(route('dev', 'Refactor de pagos multiarchivo', 'refactoriza el módulo de pagos', high).model).toBe('sonnet')
   expect(route('dev', 'Endpoint', 'implementa el endpoint nuevo y sus tests', high).model).toBe('haiku')

@@ -1,5 +1,5 @@
 import type { ModelRouterLevel, ModelRouterLimit, ModelRouterTask } from '../types'
-import { STRONG, classify, classifyDefault, head } from './classify'
+import { CONC, PROD, RISK, STRONG, classify, classifyDefault, head } from './classify'
 import { DEFAULT_PREFS } from './quota'
 import type { Thresholds } from './quota'
 
@@ -25,6 +25,8 @@ export type AgentRule = { base: ModelRouterLevel; floor: ModelRouterLevel; ceili
 const byClass = (base: ModelRouterLevel): Pick => (d, p) => shift(base, classify(d, p))
 const intro = (d: string, p: string) => `${d}\n${head(p)}`
 
+export const reviewUp = (d: string, p: string) => [RISK, PROD, CONC].some(re => re.test(intro(d, p)))
+
 export const RULES: Record<string, AgentRule> = {
   dev: { base: 'sonnet', floor: 'haiku', ceiling: 'fable', pick: byClass('sonnet') },
   qa: {
@@ -33,7 +35,12 @@ export const RULES: Record<string, AgentRule> = {
     ceiling: 'sonnet',
     pick: (d, p) => (QA_UP.test(intro(d, p)) || rank(classify(d, p)) >= rank('opus') ? 'sonnet' : 'haiku'),
   },
-  review: { base: 'opus', floor: 'sonnet', ceiling: 'opus', pick: byClass('opus') },
+  review: {
+    base: 'opus',
+    floor: 'sonnet',
+    ceiling: 'fable',
+    pick: (d, p) => (reviewUp(d, p) ? 'fable' : clampLevel(byClass('opus')(d, p), 'sonnet', 'opus')),
+  },
   explorer: {
     base: 'sonnet',
     floor: 'haiku',
@@ -43,7 +50,7 @@ export const RULES: Record<string, AgentRule> = {
   tooling: {
     base: 'sonnet',
     floor: 'haiku',
-    ceiling: 'sonnet',
+    ceiling: 'opus',
     pick: (d, p) => (UPDATE_ONLY.test(intro(d, p)) && !CREATE.test(intro(d, p)) && !STRONG.test(`${d}\n${p}`) ? 'haiku' : 'sonnet'),
   },
   plan: { base: 'sonnet', floor: 'haiku', ceiling: 'opus', pick: byClass('sonnet') },
@@ -78,7 +85,7 @@ export function applyUsage(level: ModelRouterLevel, floor: ModelRouterLevel, u: 
   if (u.hasData) {
     if (u.general >= th.critical) {
       out = floor
-      if (out !== level) notes.push(`uso ${Math.round(u.general)} % → haiku/suelo`)
+      notes.push(`uso ${Math.round(u.general)} % → ${out !== level ? 'haiku/suelo, ' : ''}para y avisa`)
     } else if (u.general >= th.warn) {
       out = at(Math.max(rank(floor), rank(level) - 1))
       if (out !== level) notes.push(`uso ${Math.round(u.general)} % → un escalón menos`)
@@ -105,15 +112,17 @@ export type RouteDecision = {
   reason: string
 }
 
-/** Failed runs of one agent type and description before fable takes the relaunch over as supervisor. */
+/** Failed runs of one agent type and description before the relaunch is raised to the agent's rescue level. */
 export const SUPERVISE_AFTER = 2
 
 const taskKey = (subagentType: string, description: string) => `${subagentType.trim().toLowerCase()}\n${description.trim().toLowerCase().replace(/\s+/g, ' ')}`
 
-/** Runs of the same agent type and description that ended in error (spawn denied, or turn ended without an answer). */
-export const failedAttempts = (tasks: readonly ModelRouterTask[], subagentType: string, description: string) => {
+/** Runs of the same agent type and description that ended in error (spawn denied, or turn ended without an answer), optionally only those on one model. */
+export const failedAttempts = (tasks: readonly ModelRouterTask[], subagentType: string, description: string, model?: ModelRouterLevel) => {
   const key = taskKey(subagentType, description)
-  return description.trim() === '' ? 0 : tasks.filter(t => t.status === 'error' && taskKey(t.subagentType, t.description) === key).length
+  return description.trim() === ''
+    ? 0
+    : tasks.filter(t => t.status === 'error' && taskKey(t.subagentType, t.description) === key && (model === undefined || t.model === model)).length
 }
 
 export function route(
@@ -124,14 +133,19 @@ export function route(
   requested?: string,
   th: Thresholds = DEFAULT_PREFS,
   failures = 0,
+  opusFailed = false,
 ): RouteDecision {
   const rule = ruleFor(subagentType)
-  const supervised = failures >= SUPERVISE_AFTER
-  const picked = supervised ? 'fable' : clampLevel(rule.pick(description, prompt), rule.floor, rule.ceiling)
+  const normal = clampLevel(rule.pick(description, prompt), rule.floor, rule.ceiling)
+  const afterOpus = opusFailed && rule === RULES.dev
+  const supervised = !afterOpus && failures >= SUPERVISE_AFTER
+  const rescue = afterOpus ? 'fable' : supervised ? clampLevel('opus', rule.floor, rule.ceiling) : normal
+  const picked = at(Math.max(rank(normal), rank(rescue)))
   const used = applyUsage(picked, rule.floor, usageState(limits), th)
   const reason = [
     `${subagentType || 'general-purpose'}: base ${rule.base}, suelo ${rule.floor}, tarea ${picked}`,
-    ...(supervised ? [`supervisor fable tras ${failures} intentos fallidos`] : []),
+    ...(afterOpus ? ['fable tras fallo de opus'] : []),
+    ...(supervised ? [`supervisor ${picked} tras ${failures} intentos fallidos`] : []),
     ...(requested !== undefined && requested !== '' ? [`pedido ${requested} (ignorado)`] : []),
     ...used.notes,
   ].join(' · ')
@@ -144,11 +158,15 @@ export function routeNote(limits: readonly ModelRouterLimit[] | undefined, th: T
   const parts: string[] = []
   let level: 'ok' | 'high' | 'critical' = 'ok'
   if (u.general >= th.critical) {
-    parts.push(`uso al ${Math.round(u.general)} %: todo a haiku salvo suelos`)
+    parts.push(`uso al ${Math.round(u.general)} %: todo a haiku salvo suelos, para y avisa`)
     level = 'critical'
   } else if (u.general >= th.warn) {
     parts.push(`uso al ${Math.round(u.general)} %: baja un escalón`)
     level = 'high'
+  }
+  if (u.fableWeekly !== undefined && u.fableWeekly >= th.warn) {
+    parts.push(`fable semanal al ${Math.round(u.fableWeekly)} %: sin fable`)
+    if (level === 'ok') level = 'high'
   }
   if (u.opusWeekly !== undefined && u.opusWeekly >= th.warn) {
     parts.push(`opus semanal al ${Math.round(u.opusWeekly)} %: sin opus`)

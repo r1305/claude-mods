@@ -44,10 +44,11 @@ const TALL_PANE = {
   props: { title: 'Model router', isFocused: false, bodyColumns: 80, placement: 'inline', scroll: { bodyRows: 80 } },
 } as never
 
-test('levels follow the configurable thresholds: 80 and 90 by default', () => {
+test('levels follow the configurable thresholds: 80 and 95 by default', () => {
   expect(levelOf(79.9, DEFAULT_PREFS)).toBe('normal')
   expect(levelOf(80, DEFAULT_PREFS)).toBe('aviso')
-  expect(levelOf(90, DEFAULT_PREFS)).toBe('critico')
+  expect(levelOf(94.9, DEFAULT_PREFS)).toBe('aviso')
+  expect(levelOf(95, DEFAULT_PREFS)).toBe('critico')
   const custom = { alerts: true, warn: 50, critical: 70 }
   expect(levelOf(55, custom)).toBe('aviso')
   expect(levelOf(70, custom)).toBe('critico')
@@ -67,17 +68,17 @@ test('the aviso alert fires once; 85 % does not repeat it; the crítico one fire
   expect(result.alert).toBeUndefined()
   memory = result.memory
 
-  result = evaluateAlerts(memory, win(90), DEFAULT_PREFS)
-  expect(result.alert).toEqual({ level: 'critico', threshold: 90 })
+  result = evaluateAlerts(memory, win(95), DEFAULT_PREFS)
+  expect(result.alert).toEqual({ level: 'critico', threshold: 95 })
   memory = result.memory
 
-  expect(evaluateAlerts(memory, win(95), DEFAULT_PREFS).alert).toBeUndefined()
+  expect(evaluateAlerts(memory, win(98), DEFAULT_PREFS).alert).toBeUndefined()
 })
 
 test('jumping past both thresholds raises one crítico alert and marks both as fired', () => {
-  const result = evaluateAlerts(emptyMemory(), win(93), DEFAULT_PREFS)
-  expect(result.alert).toEqual({ level: 'critico', threshold: 90 })
-  expect(result.memory.fired.sort()).toEqual([80, 90])
+  const result = evaluateAlerts(emptyMemory(), win(96), DEFAULT_PREFS)
+  expect(result.alert).toEqual({ level: 'critico', threshold: 95 })
+  expect(result.memory.fired.sort()).toEqual([80, 95])
 })
 
 test('a new reset time restarts the window cycle, so its alerts come again', () => {
@@ -90,8 +91,8 @@ test('a new reset time restarts the window cycle, so its alerts come again', () 
 })
 
 test('a drop in the figure restarts the cycle too', () => {
-  const high = evaluateAlerts(emptyMemory(), win(92, null), DEFAULT_PREFS)
-  expect(high.alert?.threshold).toBe(90)
+  const high = evaluateAlerts(emptyMemory(), win(96, null), DEFAULT_PREFS)
+  expect(high.alert?.threshold).toBe(95)
   const dropped = evaluateAlerts(high.memory, win(10, null), DEFAULT_PREFS)
   expect(dropped.alert).toBeUndefined()
   const again = evaluateAlerts(dropped.memory, win(81, null), DEFAULT_PREFS)
@@ -118,10 +119,10 @@ test('custom thresholds replace the defaults in the alerts', () => {
   expect(evaluateAlerts(emptyMemory(), win(75), custom).alert).toEqual({ level: 'critico', threshold: 70 })
 })
 
-test('stored preferences: bad values fall back to 80 and 90, a good pair is kept', () => {
+test('stored preferences: bad values fall back to 80 and 95, a good pair is kept', () => {
   expect(parsePrefs(undefined)).toEqual(DEFAULT_PREFS)
   expect(parsePrefs({ alerts: true, warn: 95, critical: 10 })).toEqual(DEFAULT_PREFS)
-  expect(parsePrefs({ alerts: false, warn: 70, critical: 101 })).toEqual({ alerts: false, warn: 70, critical: 90 })
+  expect(parsePrefs({ alerts: false, warn: 70, critical: 101 })).toEqual({ alerts: false, warn: 70, critical: 95 })
   expect(parsePrefs({ alerts: true, warn: 'x', critical: 85 })).toEqual({ alerts: true, warn: 80, critical: 85 })
   expect(parsePrefs({ alerts: 'si', warn: 60, critical: 85 })).toEqual({ alerts: true, warn: 60, critical: 85 })
 })
@@ -130,7 +131,7 @@ test('windows: only the two plan windows are read; a missing one is Sin dato', (
   expect(windowsOf([])).toEqual({ five_hour: null, seven_day: null })
   expect(windowsOf([{ kind: 'spend_limit', percentUsed: 120 }])).toEqual({ five_hour: null, seven_day: null })
   expect(windowLine('five_hour', null, DEFAULT_PREFS)).toBe('Ventana de 5 h: Sin dato')
-  expect(windowLine('seven_day', win(91, null), DEFAULT_PREFS)).toBe('Ventana semanal: 91 % · crítico')
+  expect(windowLine('seven_day', win(96, null), DEFAULT_PREFS)).toBe('Ventana semanal: 96 % · crítico')
   expect(windowLine('five_hour', win(50), DEFAULT_PREFS)).toMatch(/^Ventana de 5 h: 50 % · reinicia \d{2}:\d{2}$/)
   expect(windowLine('seven_day', win(50), DEFAULT_PREFS)).toMatch(/^Ventana semanal: 50 % · reinicia \d{2}\/\d{2} \d{2}:\d{2}$/)
   expect(formatClock(null)).toBe('Sin dato')
@@ -254,11 +255,11 @@ test('alerts: one toast per threshold and window cycle, through the measure even
   await measure($, [limit('five_hour', 85)])
   expect(toasts.length).toBe(1)
 
-  await measure($, [limit('five_hour', 90)])
+  await measure($, [limit('five_hour', 95)])
   expect(toasts.length).toBe(2)
   expect(toasts[1]).toContain('Crítico')
 
-  await measure($, [limit('five_hour', 95)])
+  await measure($, [limit('five_hour', 98)])
   expect(toasts.length).toBe(2)
 })
 
@@ -273,7 +274,7 @@ test('alerts: a new reset time raises them again, and so does a drop in the figu
   await measure($, [limit('five_hour', 85, B)])
   expect(toasts.length).toBe(2)
 
-  await measure($, [limit('seven_day', 92)])
+  await measure($, [limit('seven_day', 96)])
   expect(toasts.length).toBe(3)
   expect(toasts[2]).toContain('Crítico')
   await measure($, [limit('seven_day', 5)])

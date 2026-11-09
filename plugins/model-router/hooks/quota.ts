@@ -43,7 +43,7 @@ export const LABELS: Record<ModelRouterWindowKind, string> = {
   seven_day: 'Ventana semanal',
 }
 
-export const DEFAULT_PREFS: ModelRouterPrefs = { alerts: true, warn: 80, critical: 90 }
+export const DEFAULT_PREFS: ModelRouterPrefs = { alerts: true, warn: 80, critical: 95 }
 
 export const PREFS_KEY = 'prefs'
 

@@ -1,6 +1,6 @@
 # Model router
 
-Mod de Claude Code (0.13.2) para Claude Desktop (pestaña Code) y terminal.
+Mod de Claude Code (0.14.0) para Claude Desktop (pestaña Code) y terminal.
 
 Elige el modelo (haiku, sonnet, opus o fable) de cada subagente según una tabla de suelos por agente, la complejidad de la tarea y los límites de uso de la cuenta. Muestra un único panel de cuotas y consumo: límites de 5 h y semanal, alertas, tokens por modelo y consumo por día y por sesión.
 
@@ -11,7 +11,7 @@ Elige el modelo (haiku, sonnet, opus o fable) de cada subagente según una tabla
 - **Tareas en progreso** (bloque siempre visible del panel): los subagentes del turno actual agrupados por modelo (Opus, Sonnet, Haiku; cabecera con su color, glifo y número de tareas) y una fila por tarea con descripción, esfuerzo en letra pequeña con color (low verde, medium ámbar, high/xhigh/max rojo, desconocido `—` gris; mismas constantes `EFFORT_COLOR` en escritorio y terminal) y estado (en curso, hecha, error); en curso primero dentro de cada grupo. Si el modelo de la sesión principal se conoce, añade la fila `Principal · <modelo> · <esfuerzo>`. Cada prompt nuevo reinicia la lista; sin subagentes muestra «Sin tareas en este turno».
 - **Vista de tokens** (pane `model-router-tokens`, con `/model-router tokens` o la tecla `t` del panel): tokens de hoy y de 7 días por familia (Haiku, Sonnet, Opus, Fable, todas las sesiones con el mod) con barra de reparto semanal, y los tokens de esta sesión por nombre exacto de modelo, en filas con glifo y barra de reparto entre entrada, salida y caché. Se actualiza tras cada turno.
 - **Historial de tareas** (pane `model-router-history`, con `/model-router historial` o la tecla `h` del panel): tareas ya completadas (hechas o con error) agrupadas por modelo (Opus, Sonnet, Haiku), las más recientes primero, con descripción, esfuerzo coloreado (bajo verde, medio ámbar, alto/xhigh/max rojo), estado y duración si hay. Es el historial de la sesión actual: el estado guarda hasta 200 tareas y no sobrevive a reinicios; no se persiste en disco.
-- **Semáforo de niveles** con dos umbrales configurables, 80 % (aviso) y 90 % (crítico). Es el mismo para el panel, la línea de estado, el texto de uso y el enrutado.
+- **Semáforo de niveles** con dos umbrales configurables, 80 % (aviso) y 95 % (crítico). Es el mismo para el panel, la línea de estado, el texto de uso y el enrutado.
 - **Alertas** con aviso emergente al cruzar cada umbral, una vez por umbral y ventana.
 - **Tokens por modelo** de la sesión, por nombre exacto de modelo, con entrada, salida y caché de lectura y escritura por separado.
 - **Progreso de la tarea**: cuenta los subagentes lanzados en el turno actual y cuántos han terminado (`Tarea 2/5`, con barra y porcentaje). Se muestra en dos sitios: como bloque «Tarea en curso» del panel y como barra encima del cuadro de prompt, que avanza según terminan los subagentes. La barra está siempre visible: cada prompt nuevo reinicia la cuenta y, sin subagentes, muestra `Tarea 0/0 · en espera`; el bloque del panel aparece cuando el turno lanza el primero.
@@ -28,9 +28,20 @@ Elige el modelo (haiku, sonnet, opus o fable) de cada subagente según una tabla
 | senior | opus | arquitectura, causa raíz, auth/seguridad, pagos, concurrencia, migraciones |
 | goat | fable | escalado explícito («tras dos intentos», «sigue fallando») o dos señales duras juntas en la descripción o el inicio del prompt con verbo de cambio: diseño multiarchivo, seguridad/pagos, datos de producción, concurrencia/transacciones |
 
-Cada tarea entra por su nivel y nunca pasa el techo del agente. Solo el agente `dev` tiene techo fable; el resto (plan, review, qa, explorer, tooling y genéricos) llega como máximo a opus. Con uso en aviso baja un escalón (fable → opus); un límite semanal de fable en aviso quita fable.
+Cada tarea entra por su nivel y nunca pasa el techo del agente. Solo `dev` y `review` pueden llegar a fable:
 
-**Fable como supervisor.** Tras dos ejecuciones fallidas de un mismo agente (spawn denegado, o turno terminado sin respuesta) con el mismo tipo de agente y la misma `description`, la siguiente ejecución va a fable sea cual sea el techo del agente, en vez de una tercera pasada al mismo nivel. Los límites de uso siguen aplicando (fable semanal en aviso → opus; uso general en aviso → un escalón menos). El panel y la vista de tokens muestran las cuatro familias: Haiku, Sonnet, Opus y Fable.
+| Agente | Por defecto | Sube a opus si | Sube a fable si | Techo |
+| --- | --- | --- | --- | --- |
+| dev | sonnet | pagos/Culqi, concurrencia/transacciones/locks, auth/seguridad, migraciones o datos prod, refactor multiarchivo, bug sin causa clara | ≥2 señales duras a la vez, o fallo de opus | fable |
+| review | opus | — | el diff toca pagos, auth, concurrencia o datos de producción | fable |
+| qa | haiku | datos prod o concurrencia → sonnet | nunca | sonnet |
+| explorer | sonnet (haiku en modo actualización) | — | nunca | sonnet |
+| tooling | sonnet (haiku al solo actualizar) | — | nunca | opus |
+| plan y genéricos | según la tarea | arquitectura, causa raíz, dominio sensible | nunca | opus |
+
+Límites: fable semanal ≥ 80 % → fable pasa a opus (dev y review); opus semanal ≥ 80 % → opus pasa a sonnet; 5 h o semanal general ≥ 80 % → un escalón menos sin pasar del suelo; ≥ 95 % → todo al suelo, para y avisa. Esfuerzo de fable: high por defecto, max solo excepcional (indicación al orquestador; el mod no fija el esfuerzo del subagente).
+
+**Rescate tras fallos.** Tras dos ejecuciones fallidas de un mismo agente (spawn denegado, o turno terminado sin respuesta) con el mismo tipo de agente y la misma `description`, la siguiente ejecución sube a opus, limitado por el techo del agente (qa y explorer: sonnet). Una ejecución de `dev` que falló en opus se relanza en fable. Los límites de uso siguen aplicando (fable semanal en aviso → opus; uso general en aviso → un escalón menos). El panel y la vista de tokens muestran las cuatro familias: Haiku, Sonnet, Opus y Fable.
 
 ## Comandos
 
@@ -53,11 +64,11 @@ Cada tarea entra por su nivel y nunca pasa el techo del agente. Solo el agente `
 | --- | --- | --- | --- |
 | normal | por debajo del aviso | verde, ● normal | sin cambio |
 | aviso | desde el aviso (80 % por defecto) | amarillo, ▲ aviso | un escalón menos; sin opus si un límite de opus está en aviso |
-| crítico | desde el crítico (90 % por defecto) | rojo, ■ crítico | todo a haiku salvo los suelos |
+| crítico | desde el crítico (95 % por defecto) | rojo, ■ crítico | todo a haiku salvo los suelos; para y avisa |
 
-Las preferencias (alertas y umbrales) se guardan con `$.store` bajo la clave `prefs`. Si no existen, si no se pueden leer o si son inválidas (aviso no menor que crítico, valores fuera de 1 a 100), se usan 80 y 90.
+Las preferencias (alertas y umbrales) se guardan con `$.store` bajo la clave `prefs`. Si no existen, si no se pueden leer o si son inválidas (aviso no menor que crítico, valores fuera de 1 a 100), se usan 80 y 95.
 
-**Cambio de comportamiento respecto a 0.5.2**: el enrutado bajaba a haiku al 95 % de uso general; ahora baja al umbral crítico configurado (90 % por defecto). El semáforo de 60 % y 95 % fijos ya no existe.
+**Cambio de comportamiento respecto a 0.5.2**: el enrutado bajaba a haiku al 95 % de uso general; ahora baja al umbral crítico configurado (95 % por defecto desde 0.14.0; antes 90 %). El semáforo de 60 % y 95 % fijos ya no existe.
 
 ## Alertas
 
@@ -93,7 +104,7 @@ Las cifras cubren los turnos vistos desde que empezó la sesión; no se reconstr
 
 ## Estructura
 
-- `.claude-plugin/plugin.json`: manifiesto, versión 0.13.2, contrato de estado en `types/index.d.ts`.
+- `.claude-plugin/plugin.json`: manifiesto, versión 0.14.0, contrato de estado en `types/index.d.ts`.
 - `hooks/hooks.json`: módulo de hooks `./register.tsx`.
 - `hooks/register.tsx`: hooks y cableado (`session.start`, `session.measure`, `turn.complete`, `agent.spawn`, `command.run` de `/model-router` y `/quota`, `ui.render` de los panes `model-router`, `model-router-tokens` y `model-router-history`, `prompt.compose`).
 - `hooks/quota.ts`: lógica pura de límites, umbrales, alertas, preferencias, tokens por modelo y comandos.
@@ -121,7 +132,7 @@ claude plugin test <ruta al mod>
 
 ## Migración desde quota-watch
 
-quota-watch queda retirado: su panel, alertas, tokens por modelo y `/quota` están en este mod. Sus preferencias guardadas (alertas y umbrales) no se importan: `$.store` es por mod, así que este mod arranca con 80 y 90 hasta que se configure. Si quota-watch sigue instalado junto a este mod, ambos registran `/quota`; retira uno de los dos.
+quota-watch queda retirado: su panel, alertas, tokens por modelo y `/quota` están en este mod. Sus preferencias guardadas (alertas y umbrales) no se importan: `$.store` es por mod, así que este mod arranca con 80 y 95 hasta que se configure. Si quota-watch sigue instalado junto a este mod, ambos registran `/quota`; retira uno de los dos.
 
 ## Limitaciones conocidas
 

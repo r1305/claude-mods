@@ -61,7 +61,10 @@ const POLICY = [
   'Model routing: the model-router mod is a middleware for every Agent tool call (all agent types except forks and workflow agents).',
   'It picks the subagent model itself from a per-agent base/floor table, the task complexity and the account usage limits, and overrides any `model` you pass.',
   'You do not need to choose `model`; write a clear `description` and prompt. Do not spawn agents just to save tokens.',
-  `Fable is the supervisor: after ${SUPERVISE_AFTER} failed runs of one agent (spawn denied, or its turn ended without an answer), relaunch it once more with the same subagent type and \`description\` and the router hands that run to fable instead of a third run at the same level.`,
+  'Only `dev` and `review` can reach fable: dev with two or more hard signals at once (multi-file design, security/payments, production data, concurrency) or after a failed run on opus; review when the diff touches payments, auth, concurrency or production data. qa and explorer top out at sonnet, tooling at opus.',
+  `After ${SUPERVISE_AFTER} failed runs of one agent (spawn denied, or its turn ended without an answer), relaunch it with the same subagent type and \`description\`: the router raises that run to opus (capped by the agent ceiling); a dev run that failed on opus is relaunched on fable.`,
+  'Effort for fable runs: high by default; max only in exceptional cases.',
+  'Usage: fable weekly at 80 % or more removes fable (to opus); opus weekly at 80 % removes opus (to sonnet); 5 h or weekly at 80 % drops one step down to the agent floor; at 95 % stop starting heavy work and tell the user the reset time.',
 ].join('\n')
 
 const fileId = (id: string) => id.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 64)
@@ -342,7 +345,8 @@ export const register: Register = on => {
     const [enabled, lims, config, run, prior] = await Promise.all([read($, isEnabled), read($, limits), read($, prefs), read($, runSeq), read($, tasks)])
     const isRouted = enabled && !e.fork && !e.workflow
     const failures = failedAttempts(prior, e.subagentType ?? '', e.description ?? '')
-    const decision = isRouted ? route(e.subagentType ?? '', e.description ?? '', e.prompt ?? '', lims, e.model, config, failures) : undefined
+    const opusFailed = failedAttempts(prior, e.subagentType ?? '', e.description ?? '', 'opus') > 0
+    const decision = isRouted ? route(e.subagentType ?? '', e.description ?? '', e.prompt ?? '', lims, e.model, config, failures, opusFailed) : undefined
     const chosen = decision?.model
     const startedAt = await $.clock.now()
     let r: AgentSpawnResult | undefined

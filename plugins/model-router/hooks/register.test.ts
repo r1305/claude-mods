@@ -175,7 +175,7 @@ test('denied spawn is recorded as error', async ($, on) => {
   expect(textOf(await ui.drawn())).not.toContain('· en curso')
 })
 
-test('third run of an agent after two failures goes to fable as supervisor', async ($, on) => {
+test('third run of an agent after two failures is raised to its rescue level (qa: sonnet)', async ($, on) => {
   mock.clock(on)
   on('turn.complete', (_$, e) => ({ text: e.answer }) as never)
   const seen: { model?: unknown } = {}
@@ -192,7 +192,7 @@ test('third run of an agent after two failures goes to fable as supervisor', asy
   expect(seen.model).toBe('haiku')
   await $.turn.complete(complete('agent_2', 'error'))
   await $.agent.spawn(spawnInput({ ...qa, description: ' validar  login ' }))
-  expect(seen.model).toBe('fable')
+  expect(seen.model).toBe('sonnet')
   await $.agent.spawn(spawnInput({ ...qa, description: 'Validar registro' }))
   expect(seen.model).toBe('haiku')
 })
