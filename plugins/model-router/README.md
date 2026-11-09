@@ -1,6 +1,6 @@
 # Model router
 
-Mod de Claude Code (0.14.0) para Claude Desktop (pestaña Code) y terminal.
+Mod de Claude Code (0.14.1) para Claude Desktop (pestaña Code) y terminal.
 
 Elige el modelo (haiku, sonnet, opus o fable) de cada subagente según una tabla de suelos por agente, la complejidad de la tarea y los límites de uso de la cuenta. Muestra un único panel de cuotas y consumo: límites de 5 h y semanal, alertas, tokens por modelo y consumo por día y por sesión.
 
@@ -32,7 +32,7 @@ Cada tarea entra por su nivel y nunca pasa el techo del agente. Solo `dev` y `re
 
 | Agente | Por defecto | Sube a opus si | Sube a fable si | Techo |
 | --- | --- | --- | --- | --- |
-| dev | sonnet | pagos/Culqi, concurrencia/transacciones/locks, auth/seguridad, migraciones o datos prod, refactor multiarchivo, bug sin causa clara | ≥2 señales duras a la vez, o fallo de opus | fable |
+| dev | sonnet (haiku si el cambio es trivial: texto/copy, CSS, un archivo sin lógica nueva) | pagos/Culqi, concurrencia/transacciones/locks, auth/seguridad, migraciones o datos prod, refactor multiarchivo, bug sin causa clara | ≥2 señales duras a la vez, o fallo de opus | fable |
 | review | opus | — | el diff toca pagos, auth, concurrencia o datos de producción | fable |
 | qa | haiku | datos prod o concurrencia → sonnet | nunca | sonnet |
 | explorer | sonnet (haiku en modo actualización) | — | nunca | sonnet |
@@ -104,7 +104,7 @@ Las cifras cubren los turnos vistos desde que empezó la sesión; no se reconstr
 
 ## Estructura
 
-- `.claude-plugin/plugin.json`: manifiesto, versión 0.14.0, contrato de estado en `types/index.d.ts`.
+- `.claude-plugin/plugin.json`: manifiesto, versión 0.14.1, contrato de estado en `types/index.d.ts`.
 - `hooks/hooks.json`: módulo de hooks `./register.tsx`.
 - `hooks/register.tsx`: hooks y cableado (`session.start`, `session.measure`, `turn.complete`, `agent.spawn`, `command.run` de `/model-router` y `/quota`, `ui.render` de los panes `model-router`, `model-router-tokens` y `model-router-history`, `prompt.compose`).
 - `hooks/quota.ts`: lógica pura de límites, umbrales, alertas, preferencias, tokens por modelo y comandos.
